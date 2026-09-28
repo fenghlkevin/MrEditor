@@ -508,7 +508,9 @@ final class PieceTableViewer: NSView, DocumentPane {
     }
 
     private var visibleLineCount: Int {
-        max(1, Int(ceil(documentView.bounds.height / documentView.lineHeight)))
+        // Only complete rows count toward scroll limits and caret visibility.
+        // refresh() loads one extra row for the partially visible bottom edge.
+        max(1, Int(floor(documentView.bounds.height / documentView.lineHeight)))
     }
 
     /// 表示空間の総行数。フィルタ表示＝並べた行数（一致行＋前後）、クリーン＝LineIndex、編集後＝piece table。
@@ -2083,6 +2085,7 @@ extension PieceTableViewer {
     var _testColumnGuidesHidden: Bool { documentView.columnGuidesHidden }
     var _testCaret: Int { caretByte }
     var _testLineCount: Int { pieceTable?.lineCount ?? 0 }
+    var _testLineHeight: CGFloat { documentView.lineHeight }
 
     func _testSetCaret(_ b: Int) { caretByte = b; selectionAnchor = b; caretGoalColumn = nil }
     func _testSelect(_ r: Range<Int>) { selectionAnchor = r.lowerBound; caretByte = r.upperBound }

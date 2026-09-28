@@ -96,6 +96,9 @@ final class PieceTable {
     /// 原本の行↔バイト変換を高速化する近道（巨大原本での線形スキャンを避ける）。無ければ従来スキャン。
     private let originalLocator: OriginalLineLocator?
     private var add: [UInt8] = []
+    /// Absolute offsets in the append-only buffer. Keep these after deletion:
+    /// surviving pieces still refer to the same source offsets.
+    private var addNewlineOffsets: [Int] = []
     private var root: Node?
     private var rng = SplitMix64(seed: 0x1234_5678_9ABC_DEF0)
 
@@ -148,8 +151,12 @@ final class PieceTable {
         let clamped = min(max(0, offset), byteCount)
         let addStart = add.count
         add.append(contentsOf: bytes)
+        let previousNewlines = addNewlineOffsets.count
+        for (offset, byte) in bytes.enumerated() where byte == 0x0A {
+            addNewlineOffsets.append(addStart + offset)
+        }
         let piece = Piece(source: .add, start: addStart,
-                          length: bytes.count, newlines: countNewlines(bytes))
+                          length: bytes.count, newlines: addNewlineOffsets.count - previousNewlines)
         let (l, r) = split(root, at: clamped)
         let mid = Node(piece, priority: rng.next())
         root = merge(merge(l, mid), r)
@@ -358,6 +365,9 @@ final class PieceTable {
 
     /// 供給源の範囲の 0x0A を数える。原本はロケータがあれば O(stride)、無ければチャンク線形スキャン。
     private func countNewlines(in s: Source, _ range: Range<Int>) -> Int {
+        if s == .add {
+            return addedNewlines(before: range.upperBound) - addedNewlines(before: range.lowerBound)
+        }
         if s == .original, let loc = originalLocator {
             return loc.newlineCount(upTo: range.upperBound) - loc.newlineCount(upTo: range.lowerBound)
         }
@@ -373,6 +383,10 @@ final class PieceTable {
 
     /// ピース内で `ordinal` 番目（0始まり）の 0x0A のピース内オフセットを返す。
     private func nthNewlineOffset(in piece: Piece, ordinal: Int) -> Int {
+        if piece.source == .add {
+            let before = addedNewlines(before: piece.start)
+            return addNewlineOffsets[before + ordinal] - piece.start
+        }
         // 原本はロケータで直接ジャンプ（巨大ピースを先頭から走査しない）。
         if piece.source == .original, let loc = originalLocator {
             let before = loc.newlineCount(upTo: piece.start)
@@ -390,5 +404,20 @@ final class PieceTable {
             pos += len
         }
         return max(0, piece.length - 1)   // 到達しない
+    }
+
+    /// Lower bound: a newline at `offset` belongs to the following range.
+    private func addedNewlines(before offset: Int) -> Int {
+        var lo = 0
+        var hi = addNewlineOffsets.count
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2
+            if addNewlineOffsets[mid] < offset {
+                lo = mid + 1
+            } else {
+                hi = mid
+            }
+        }
+        return lo
     }
 }

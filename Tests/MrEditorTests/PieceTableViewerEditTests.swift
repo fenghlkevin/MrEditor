@@ -13,6 +13,27 @@ final class PieceTableViewerEditTests: XCTestCase {
 
     // MARK: 挿入
 
+    func testScrollToEndKeepsLastRowFullyVisible() {
+        let v = makeViewer(String(repeating: "line\n", count: 20))
+        let height = v._testLineHeight
+        for rows: CGFloat in [5, 5.25, 5.99, 6] {
+            v.setFrameSize(NSSize(width: 400, height: height * rows))
+            v._testCommand("scrollToEndOfDocument:")
+            XCTAssertEqual(v._testTopLine, 20 - Int(floor(rows)))
+            XCTAssertLessThanOrEqual(CGFloat(20 - v._testTopLine) * height,
+                                     v.bounds.height)
+        }
+    }
+
+    func testTypingInPartialBottomRowScrollsCaretIntoFullView() {
+        let v = makeViewer(String(repeating: "line\n", count: 20))
+        let height = v._testLineHeight
+        v.setFrameSize(NSSize(width: 400, height: height * 5.5))
+        v._testSetCaret(5 * 5)
+        v._testInsert("x")
+        XCTAssertEqual(v._testTopLine, 1)
+    }
+
     func testInsertAtCaretAdvancesAndUndoRedo() {
         let v = makeViewer("hello")
         v._testSetCaret(5)

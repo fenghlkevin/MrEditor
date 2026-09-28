@@ -99,6 +99,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <array>
         <string>en</string>
         <string>ja</string>
+        <string>zh-Hans</string>
     </array>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>

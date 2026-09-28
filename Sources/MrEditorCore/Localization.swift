@@ -8,13 +8,17 @@ import Foundation
 /// そこで **利用可能ロケールとユーザの優先言語を自前で突き合わせ**、
 /// 該当する `*.lproj` を直接ロードして使う。
 private let localizedBundle: Bundle = {
-    let available = Bundle.module.localizations            // 例: ["ja", "en"]
+    let available = Bundle.module.localizations            // 例: ["ja", "en", "zh-Hans"]
 
     func bestMatch() -> String {
         for pref in Locale.preferredLanguages {            // 例: ["ja-JP", "en", …]
             if available.contains(pref) { return pref }
-            let code = String(pref.prefix { $0 != "-" })   // "ja-JP" → "ja"
-            if available.contains(code) { return code }
+            // Keep script subtags: zh-Hans-CN must match zh-Hans, not collapse to zh.
+            if let match = available
+                .filter({ pref.hasPrefix($0 + "-") })
+                .max(by: { $0.count < $1.count }) {
+                return match
+            }
         }
         return "en"                                        // 開発言語へフォールバック
     }

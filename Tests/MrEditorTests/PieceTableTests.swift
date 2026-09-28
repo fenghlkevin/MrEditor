@@ -176,6 +176,49 @@ final class PieceTableTests: XCTestCase {
 
     // MARK: - fuzz（参照実装と突き合わせ）
 
+    func testLargePasteLineLookupAfterSplitsAndDeletion() {
+        let table = PieceTable(bytes: [])
+        let row = Array("中文abc\r\n".utf8)
+        let rows = 100_000
+        let pasted = Array(String(repeating: "中文abc\r\n", count: rows).utf8)
+        table.insert(pasted, at: 0)
+        XCTAssertEqual(table.lineCount, rows)
+        for line in [0, 1, rows / 2, rows - 1] {
+            XCTAssertEqual(table.byteRange(ofLine: line),
+                           (line * row.count)..<((line + 1) * row.count - 1))
+            let newline = (line + 1) * row.count - 1
+            XCTAssertEqual(table.line(ofByteOffset: newline), line)
+            XCTAssertEqual(table.line(ofByteOffset: newline + 1), line + 1)
+        }
+
+        // Split a pasted piece at a newline, remove most of it, then append
+        // new source bytes at a different logical position.
+        let cut = rows / 2 * row.count - 1
+        table.insert(Array("X\nY".utf8), at: cut)
+        table.delete(0..<cut)
+        table.insert(Array("tail\n".utf8), at: 0)
+        let expected = Array("tail\nX\nY".utf8) + Array(pasted[cut...])
+        var naive = NaiveDoc()
+        naive.bytes = expected
+        XCTAssertEqual(table.bytes(in: 0..<table.byteCount), expected)
+        XCTAssertEqual(table.lineCount, naive.lineCount)
+        for line in [0, 1, 2, 3, table.lineCount - 1] {
+            XCTAssertEqual(table.byteRange(ofLine: line), naive.byteRange(ofLine: line))
+        }
+    }
+
+    func testLargePasteViewportLookupPerformance() {
+        let table = PieceTable(bytes: [])
+        table.insert(Array(String(repeating: "0123456789abcdef\n", count: 500_000).utf8), at: 0)
+        measure {
+            var total = 0
+            for line in 499_900..<500_000 {
+                total += table.byteRange(ofLine: line).count
+            }
+            XCTAssertEqual(total, 1600)
+        }
+    }
+
     func testFuzzAgainstNaive() {
         runFuzz(seeds: 1...8) { PieceTable(bytes: $0) }
     }
