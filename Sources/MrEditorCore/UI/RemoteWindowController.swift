@@ -15,7 +15,45 @@ import AppKit
 /// 手元の文書へ貼るのも、⇧⌘D のクリップボード比較へ渡すのもそのまま通る。
 public final class RemoteWindowController: NSWindowController, NSWindowDelegate {
 
+    var currentSession: RemoteSession? { session }
+    var onTitleChange: (() -> Void)?
+    var onDisconnect: (() -> Void)?
+    private weak var embeddedContent: NSView?
+    var fileTitle: String { session.map { ($0.target.path as NSString).lastPathComponent } ?? L("remote.title") }
+    private var hostWindow: NSWindow? { embeddedContent?.window ?? window }
+    private let regexToggle = NSButton(checkboxWithTitle: L("workspace.regex"), target: nil, action: nil)
+    private let caseToggle = NSButton(checkboxWithTitle: L("workspace.case"), target: nil, action: nil)
+    private let metadata = NSTextField(labelWithString: "SSH · UTF-8")
+    private var searchRevision = 0
+
+    func detachContent() -> NSView {
+        let content = window!.contentView!
+        window?.contentView = NSView()
+        embeddedContent = content
+        refreshAppearance()
+        return content
+    }
+    func shutdown() {
+        searchRevision += 1; stopFollowing(); session = nil
+        filePicker?.close(); filePicker = nil
+    }
+    func focusContent() { focusList() }
+    func refreshAppearance() {
+        let background = EditorTheme.current().background
+        let content = embeddedContent ?? window?.contentView
+        content?.wantsLayer = true; content?.layer?.backgroundColor = background.cgColor
+        table.backgroundColor = background; scroll.backgroundColor = background
+        table.reloadData()
+    }
+    var selectedText: String? {
+        let selected = table.selectedRowIndexes.filter { lines.indices.contains($0) }.map { lines[$0] }
+        return selected.isEmpty ? nil : RemoteLines.plainText(selected)
+    }
+
     private let addressField = NSTextField()
+    private lazy var connectionButton = NSButton(title: L("remote.open"), target: self, action: #selector(connectAndShowTail))
+    private lazy var chooseFileButton = NSButton(title: L("ssh.chooseAnotherFile"), target: self, action: #selector(chooseAnotherFile))
+    private var filePicker: RemoteFilePickerController?
     private let searchField = NSSearchField()
     private lazy var searchButton = NSButton(title: L("remote.filter"), target: self, action: #selector(runSearch))
     private lazy var followButton = NSButton(title: L("remote.follow"), target: self, action: #selector(toggleFollow))
@@ -51,7 +89,7 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
     required init?(coder: NSCoder) { fatalError("init(coder:) は使わない") }
 
     /// **窓を閉じたら追従を止める。** 放っておくと向こうの `tail -f` が生き続ける。
-    public func windowWillClose(_ notification: Notification) { stopFollowing() }
+    public func windowWillClose(_ notification: Notification) { shutdown() }
 
     // MARK: - 組み立て
 
@@ -62,10 +100,10 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
         addressField.target = self
         addressField.action = #selector(connectAndShowTail)
 
-        let openButton = NSButton(title: L("remote.open"), target: self, action: #selector(connectAndShowTail))
+        let openButton = connectionButton
         openButton.keyEquivalent = "\r"
 
-        searchField.placeholderString = L("remote.searchPlaceholder")
+        searchField.placeholderString = L("workspace.filterPlaceholder")
         searchField.target = self
         searchField.action = #selector(runSearch)
         searchField.isEnabled = false
@@ -96,8 +134,10 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
         table.dataSource = self
         table.delegate = self
         table.allowsMultipleSelection = true
-        table.usesAlternatingRowBackgroundColors = true
-        table.rowHeight = 16
+        table.usesAlternatingRowBackgroundColors = false
+        table.headerView = nil
+        table.intercellSpacing = NSSize(width: 12, height: 3)
+        table.rowHeight = 25
         table.style = .plain
         // **⌘C はテーブルが受ける。** 第一応答者はテーブルなので、ここに copy: が
         // 無いと応答連鎖が上まで届かず、編集メニューの「コピー」が灰色のままになる
@@ -107,12 +147,15 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
         scroll.documentView = table
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = true
-        scroll.autohidesScrollers = false
+        scroll.autohidesScrollers = true
 
-        let topRow = NSStackView(views: [addressField, openButton])
+        chooseFileButton.isHidden = true
+        let topRow = NSStackView(views: [addressField, chooseFileButton, openButton])
         topRow.orientation = .horizontal
         topRow.spacing = 8
         addressField.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        addressField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        addressField.lineBreakMode = .byTruncatingMiddle
 
         // **押せる場所を置く。** NSSearchField は Enter でしか走らず、それは画面に
         // 出ていない ＝ 初めて開いた人には「絞れる」ことが分からない。
@@ -121,15 +164,29 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
         // ―― 押し込まれているかどうかは、見て分かりにくい。
         followButton.isEnabled = false
         followButton.toolTip = L("remote.followHelp")
-        let searchRow = NSStackView(views: [searchField, contextField, searchButton, followButton, spinner])
+        let contextLabel = NSTextField(labelWithString: L("workspace.context"))
+        contextLabel.textColor = .secondaryLabelColor
+        let searchRow = NSStackView(views: [searchField, regexToggle, caseToggle, contextLabel, contextField, searchButton, followButton, spinner])
+        searchField.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        regexToggle.state = .off; caseToggle.state = .on
+        for control in [regexToggle, caseToggle] { control.target = self; control.action = #selector(runSearch) }
+        for button in [openButton, chooseFileButton, searchButton, followButton] { button.bezelStyle = .rounded }
+        followButton.image = NSImage(systemSymbolName: "play.fill", accessibilityDescription: nil)
+        followButton.imagePosition = .imageLeading
         searchRow.orientation = .horizontal
         searchRow.spacing = 8
         contextField.widthAnchor.constraint(equalToConstant: 52).isActive = true
 
-        let stack = NSStackView(views: [topRow, searchRow, scroll, statusLabel])
+        metadata.font = .systemFont(ofSize: 11); metadata.textColor = .secondaryLabelColor
+        let footerSpace = NSView(); footerSpace.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let footer = NSStackView(views: [statusLabel, footerSpace, metadata]); footer.spacing = 16
+        statusLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let divider = NSBox(); divider.boxType = .separator
+        let stack = NSStackView(views: [topRow, searchRow, divider, scroll, footer])
+        stack.alignment = .leading
         stack.orientation = .vertical
-        stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 10, right: 12)
+        stack.spacing = 14
+        stack.edgeInsets = NSEdgeInsets(top: 16, left: 18, bottom: 10, right: 18)
         stack.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(stack)
         NSLayoutConstraint.activate([
@@ -138,19 +195,24 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
             stack.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             stack.bottomAnchor.constraint(equalTo: content.bottomAnchor),
         ])
-        topRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -24).isActive = true
-        searchRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -24).isActive = true
+        topRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -36).isActive = true
+        searchRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -36).isActive = true
+
+        for view in [divider, scroll, footer] { view.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -36).isActive = true }
+        scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
 
         // 開いた直後に打つ場所は住所欄。**どこにもフォーカスが無いと、
         // 応答連鎖が始まらず ⌘C も効かない**（実機で気づいた）。
         window?.initialFirstResponder = addressField
         status(L("remote.hint"))
+        refreshAppearance()
     }
 
     // MARK: - 繋ぐ
 
     /// 繋いで、**まず末尾を出す。** 障害は末尾にある（`less +G` と同じ考え方）。
     @objc private func connectAndShowTail() {
+        if let session, session.transport != nil { open(session: session, follow: false); return }
         let text = addressField.stringValue.trimmingCharacters(in: .whitespaces)
         guard case .remote(let target) = Intake.resolve(text) else {
             status(L("remote.notRemote"))
@@ -190,6 +252,63 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
         }
     }
 
+    func open(session s: RemoteSession, follow: Bool) {
+        stopFollowing()
+        session = s
+        searchRevision += 1
+        onTitleChange?()
+        totalLines = nil; lines = []; searchField.stringValue = ""; table.reloadData()
+        searchField.isEnabled = false; searchButton.isEnabled = false; followButton.isEnabled = false
+        chooseFileButton.isHidden = s.transport == nil
+        addressField.stringValue = "\(s.target.host):\(s.target.path)"
+        addressField.isEditable = false
+        addressField.isBordered = false; addressField.drawsBackground = false
+        addressField.font = .systemFont(ofSize: 12, weight: .medium)
+        addressField.textColor = .secondaryLabelColor
+        addressField.toolTip = addressField.stringValue
+        metadata.stringValue = "SSH · UTF-8 · " + L("workspace.readOnly")
+        connectionButton.title = L("ssh.disconnect")
+        connectionButton.action = #selector(disconnect)
+        connectionButton.keyEquivalent = ""
+        window?.defaultButtonCell = nil
+        busy(true)
+        work.async { [weak self] in
+            let tail = s.tailLines(bytes: 64 << 10)
+            DispatchQueue.main.async {
+                guard let self, self.session === s else { return }
+                self.lines = tail
+                self.table.reloadData()
+                self.scrollToBottom()
+                self.focusList()
+                self.searchField.isEnabled = s.capabilities.canFilter
+                self.contextField.isEnabled = s.capabilities.canFilter
+                self.searchButton.isEnabled = s.capabilities.canFilter
+                self.followButton.isEnabled = s.capabilities.canFollow
+                self.busy(false)
+                self.window?.title = "\(s.target.host):\(s.target.path)"
+                self.reportOpened(s)
+                if follow && s.capabilities.canFollow { self.toggleFollow() }
+            }
+            self?.fillLineNumbers(using: s)
+        }
+    }
+
+    @objc private func chooseAnotherFile() {
+        guard let session else { return }
+        if let filePicker { filePicker.window?.makeKeyAndOrderFront(nil); return }
+        let picker = RemoteFilePickerController(session: session, path: RemoteDirectory.parent(session.target.path), follow: follower != nil)
+        picker.onOpen = { [weak self] file, follow in
+            guard let self, self.session != nil else { return }
+            self.open(session: file, follow: follow)
+            self.hostWindow?.makeKeyAndOrderFront(nil)
+        }
+        picker.onClose = { [weak self] in self?.filePicker = nil }
+        filePicker = picker
+        picker.showWindow(nil); picker.window?.makeKeyAndOrderFront(nil); picker.start()
+    }
+
+    @objc private func disconnect() { if let onDisconnect { onDisconnect() } else { close() } }
+
     /// **畳んだ機能は、畳んだ理由ごと出す。** 黙って消えると壊れたように見える。
     private func reportOpened(_ s: RemoteSession) {
         var parts: [String] = [L("remote.openedTail")]
@@ -204,18 +323,19 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
             guard let self, self.session === s else { return }
             self.totalLines = total
             // 末尾を出したままなら、番号付きで取り直す（既に検索結果を出していれば触らない）
-            if self.lines.allSatisfy({ !$0.isMatch }) {
+            if self.searchField.stringValue.isEmpty && self.follower == nil {
+                let revision = self.searchRevision
                 self.work.async {
                     let renumbered = s.tailLines(bytes: 64 << 10, totalLines: total)
                     DispatchQueue.main.async {
-                        guard self.session === s else { return }
+                        guard self.session === s, self.searchRevision == revision, self.follower == nil else { return }
                         self.lines = renumbered
                         self.table.reloadData()
                         self.scrollToBottom()
                         self.status(L("remote.lineCount", total))
                     }
                 }
-            } else {
+            } else if self.follower == nil && self.searchField.stringValue.isEmpty {
                 self.status(L("remote.lineCount", total))
             }
         }
@@ -226,12 +346,17 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
     /// **向こうで grep。** 10GB を 1 バイトも転送せずに、一致行と行番号が返る。
     @objc private func runSearch() {
         guard let s = session else { return }
+        stopFollowing()
+        searchRevision += 1
+        let revision = searchRevision
+        let ignoreCase = caseToggle.state != .on, regex = regexToggle.state == .on
         let pattern = searchField.stringValue
         guard !pattern.isEmpty else {
             work.async { [weak self] in
                 guard let self else { return }
                 let tail = s.tailLines(bytes: 64 << 10, totalLines: self.totalLines)
                 DispatchQueue.main.async {
+                    guard self.session === s, self.searchRevision == revision else { return }
                     self.lines = tail
                     self.table.reloadData()
                     self.scrollToBottom()
@@ -246,8 +371,9 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
         status(L("remote.searching"))
         work.async { [weak self] in
             guard let self else { return }
-            let found = s.searchLines(pattern: pattern, context: context)
+            let found = s.searchLines(pattern: pattern, context: context, ignoreCase: ignoreCase, regex: regex)
             DispatchQueue.main.async {
+                guard self.session === s, self.searchRevision == revision else { return }
                 self.busy(false)
                 guard let found else { return self.status(L("remote.searchFailed")) }
                 self.lines = found
@@ -268,7 +394,7 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
     /// 一致していない行が混ざって、**絞り込みの意味が壊れる。**
     @objc private func toggleFollow() {
         if follower != nil { return stopFollowing() }
-        guard let target = session?.target else { return }
+        guard let session else { return }
 
         // 絞り込み中なら末尾へ戻してから追う
         if lines.contains(where: \.isMatch) {
@@ -276,18 +402,20 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
             runSearch()
         }
 
-        let f = RemoteFollower(target: target)
-        f.onLines = { [weak self] incoming in
-            guard let self, self.follower === f else { return }
+        let f = RemoteFollower(session: session)
+        f.onLines = { [weak self, weak f] incoming in
+            guard let self, let f, self.follower === f else { return }
             self.appendFollowed(incoming)
         }
-        f.onEnd = { [weak self] in
-            guard let self, self.follower === f else { return }
+        f.onEnd = { [weak self, weak f] in
+            guard let self, let f, self.follower === f else { return }
             self.stopFollowing()
             self.status(L("remote.followEnded"))
         }
         follower = f
-        followButton.title = L("remote.followStop")
+        followButton.title = L("workspace.live")
+        followButton.image = NSImage(systemSymbolName: "pause.fill", accessibilityDescription: nil)
+        followButton.contentTintColor = .controlAccentColor
         searchButton.isEnabled = false
         f.start(fromBytes: 0)   // いま出ている末尾に続けるので、新着だけでよい
         status(L("remote.following"))
@@ -297,6 +425,8 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
         follower?.stop()
         follower = nil
         followButton.title = L("remote.follow")
+        followButton.image = NSImage(systemSymbolName: "play.fill", accessibilityDescription: nil)
+        followButton.contentTintColor = .secondaryLabelColor
         searchButton.isEnabled = session?.capabilities.canFilter ?? false
     }
 
@@ -311,6 +441,7 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
         if let last = lines.last?.number { totalLines = last }
         table.reloadData()
         scrollToBottom()
+        status(L("remote.following"))
     }
 
     // MARK: - 手元へ持っていく
@@ -334,11 +465,9 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
     /// 第一応答者が居ないと応答連鎖がテーブルまで降りず、編集メニューの
     /// 「コピー」が灰色のままになる。
     private func focusList() {
-        guard !lines.isEmpty else { return }
-        window?.makeFirstResponder(table)
-        if table.selectedRowIndexes.isEmpty {
-            table.selectRowIndexes(IndexSet(integer: max(0, lines.count - 1)), byExtendingSelection: false)
-        }
+        guard !lines.isEmpty, embeddedContent?.isHiddenOrHasHiddenAncestor != true else { return }
+        hostWindow?.makeFirstResponder(table)
+
     }
 
     private func scrollToBottom() {
@@ -353,6 +482,9 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
     private func status(_ text: String) {
         statusLabel.stringValue = text
         statusLabel.toolTip = text
+        if session != nil {
+            metadata.stringValue = "SSH · UTF-8 · " + L("workspace.readOnly") + " · " + L("workspace.visibleLines", lines.count)
+        }
     }
 
     /// 失敗の理由は**言い換えない。** 「Permission denied」「No such file」は
@@ -363,7 +495,7 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
         case RemoteSession.Failure.cannotRead:          return L("remote.cannotRead")
         case RemoteSession.Failure.launchFailed(let m): return m
         case RemoteSession.Failure.failed(_, let err):  return err.isEmpty ? L("remote.searchFailed") : err
-        default:                                        return String(describing: error)
+        default:                                        return error.localizedDescription
         }
     }
 }
@@ -374,12 +506,20 @@ extension RemoteWindowController: NSTableViewDataSource, NSTableViewDelegate {
 
     public func numberOfRows(in tableView: NSTableView) -> Int { lines.count }
 
+    public func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        let view = RemoteLogRowView()
+        let text = lines[row].text
+        if text.range(of: #"\b(ERROR|FATAL)\b"#, options: .regularExpression) != nil { view.tint = .systemRed }
+        else if text.range(of: #"\bWARN(ING)?\b"#, options: .regularExpression) != nil { view.tint = .systemOrange }
+        return view
+    }
+
     public func tableView(_ tableView: NSTableView, viewFor column: NSTableColumn?, row: Int) -> NSView? {
         let line = lines[row]
         let isGutter = column?.identifier.rawValue == "line"
 
         let field = NSTextField(labelWithString: "")
-        field.font = .monospacedSystemFont(ofSize: 11, weight: line.isMatch ? .bold : .regular)
+        field.font = .monospacedSystemFont(ofSize: 13, weight: line.isMatch ? .bold : .regular)
         field.lineBreakMode = .byTruncatingTail
 
         if isGutter {
@@ -390,7 +530,9 @@ extension RemoteWindowController: NSTableViewDataSource, NSTableViewDelegate {
         } else {
             field.stringValue = line.text
             // 当たりだけを立てる。前後（`grep -C`）は落として、目が当たりへ行くように。
-            field.textColor = line.isMatch ? .labelColor : .secondaryLabelColor
+            field.textColor = EditorTheme.current().foreground
+            if line.text.range(of: #"\b(ERROR|FATAL)\b"#, options: .regularExpression) != nil { field.textColor = .systemRed }
+            else if line.text.range(of: #"\bWARN(ING)?\b"#, options: .regularExpression) != nil { field.textColor = .systemOrange }
         }
         return field
     }
@@ -410,5 +552,17 @@ final class RemoteTableView: NSTableView {
     override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
         if item.action == #selector(copy(_:)) { return numberOfRows > 0 }
         return super.validateUserInterfaceItem(item)
+    }
+}
+
+private final class RemoteLogRowView: NSTableRowView {
+    var tint: NSColor?
+    override func drawBackground(in dirtyRect: NSRect) {
+        (tint?.withAlphaComponent(0.07) ?? EditorTheme.current().background).setFill()
+        dirtyRect.fill()
+    }
+    override func drawSelection(in dirtyRect: NSRect) {
+        NSColor.controlAccentColor.withAlphaComponent(0.15).setFill()
+        dirtyRect.fill()
     }
 }

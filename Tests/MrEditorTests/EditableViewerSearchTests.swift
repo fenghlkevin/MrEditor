@@ -14,6 +14,26 @@ final class EditableViewerSearchTests: XCTestCase {
         return v
     }
 
+    func testPreviewAppliesSelectedMatchesAndUndoesTogether() throws {
+        let v = viewer("alpha alpha alpha")
+        v.setSearchQuery("alpha")
+        let preview = try XCTUnwrap(v.replacementPreview("beta"))
+        XCTAssertEqual(preview.rows.count, 3)
+        XCTAssertTrue(preview.apply([0, 2]))
+        XCTAssertEqual(v._testText, "beta alpha beta")
+        preview.undo()
+        XCTAssertEqual(v._testText, "alpha alpha alpha")
+    }
+
+    func testPreviewRejectsChangedDocument() throws {
+        let v = viewer("alpha alpha")
+        v.setSearchQuery("alpha")
+        let preview = try XCTUnwrap(v.replacementPreview("beta"))
+        v.replaceAll(with: "gamma")
+        XCTAssertFalse(preview.apply([0]))
+        XCTAssertEqual(v._testText, "gamma gamma")
+    }
+
     // MARK: 検索できること
 
     func testEditablePaneSupportsSearch() {

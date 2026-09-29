@@ -16,6 +16,12 @@ final class PreferencesWindowController: NSWindowController {
         generalItem.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)
         tabs.addTabViewItem(generalItem)
 
+        let defaults = DefaultApplicationsPane()
+        defaults.title = L("defaults.title")
+        let defaultsItem = NSTabViewItem(viewController: defaults)
+        defaultsItem.image = NSImage(systemSymbolName: "doc.badge.gearshape", accessibilityDescription: nil)
+        tabs.addTabViewItem(defaultsItem)
+
         let display = DisplayPaneViewController()
         display.title = L("prefs.display")
         let displayItem = NSTabViewItem(viewController: display)
@@ -83,7 +89,6 @@ private func pin(_ stack: NSStackView, in root: NSView) {
 private final class GeneralPaneViewController: NSViewController {
     private var statusBarRadio: NSButton!
     private var sheetRadio: NSButton!
-    private var autoUpdateCheck: NSButton!
     private var autoReloadCheck: NSButton!
 
     override func loadView() {
@@ -98,9 +103,6 @@ private final class GeneralPaneViewController: NSViewController {
         hint.font = .systemFont(ofSize: 11)
         hint.textColor = .secondaryLabelColor
 
-        autoUpdateCheck = NSButton(checkboxWithTitle: L("prefs.autoUpdateCheck"),
-                                   target: self, action: #selector(autoUpdateChanged(_:)))
-
         autoReloadCheck = NSButton(checkboxWithTitle: L("prefs.autoReload"),
                                    target: self, action: #selector(autoReloadChanged(_:)))
         let reloadHint = NSTextField(wrappingLabelWithString: L("prefs.autoReload.hint"))
@@ -108,29 +110,18 @@ private final class GeneralPaneViewController: NSViewController {
         reloadHint.textColor = .secondaryLabelColor
 
         let sep = NSBox(); sep.boxType = .separator
-        let sep2 = NSBox(); sep2.boxType = .separator
 
-        var rows: [NSView] = [heading("prefs.saveProgress"), statusBarRadio, sheetRadio, hint,
+        let rows: [NSView] = [heading("prefs.saveProgress"), statusBarRadio, sheetRadio, hint,
                               sep,
                               heading("prefs.externalChanges"), autoReloadCheck, reloadHint]
-        // 更新確認をしない .app（配布の出どころを宣言していない版）では設定ごと出さない。
-        if UpdateChecker.isAvailable {
-            rows += [sep2, heading("prefs.updates"), autoUpdateCheck]
-        }
         let stack = makeStack(rows)
         hint.widthAnchor.constraint(lessThanOrEqualToConstant: 400).isActive = true
         reloadHint.widthAnchor.constraint(lessThanOrEqualToConstant: 400).isActive = true
         sep.widthAnchor.constraint(equalToConstant: 400).isActive = true
-        sep2.widthAnchor.constraint(equalToConstant: 400).isActive = true
         pin(stack, in: root)
         self.view = root
         syncRadios()
-        autoUpdateCheck.state = AppSettings.automaticUpdateChecks ? .on : .off
         autoReloadCheck.state = AppSettings.autoReloadExternalChanges ? .on : .off
-    }
-
-    @objc private func autoUpdateChanged(_ sender: NSButton) {
-        AppSettings.automaticUpdateChecks = (sender.state == .on)
     }
 
     @objc private func autoReloadChanged(_ sender: NSButton) {
@@ -412,8 +403,6 @@ private final class ColorsPaneViewController: NSViewController {
         sep.widthAnchor.constraint(equalToConstant: 400).isActive = true
 
         // --- 共有（書き出し／読み込み／リンク） ---
-        let sep2 = NSBox(); sep2.boxType = .separator
-        sep2.widthAnchor.constraint(equalToConstant: 400).isActive = true
 
         let shareHint = NSTextField(wrappingLabelWithString: L("prefs.share.hint"))
         shareHint.font = .systemFont(ofSize: 11)
@@ -432,6 +421,8 @@ private final class ColorsPaneViewController: NSViewController {
         shareStatus.font = .systemFont(ofSize: 11)
         shareStatus.textColor = .secondaryLabelColor
 
+        let sep2 = NSBox(); sep2.boxType = .separator
+        sep2.widthAnchor.constraint(equalToConstant: 400).isActive = true
         let stack = makeStack([heading("prefs.theme"), themeRow, sample, opacityRow, ansiCheck, sep, customStack,
                                sep2, heading("prefs.share"), shareHint, shareRow, shareStatus])
         sample.widthAnchor.constraint(equalToConstant: 400).isActive = true

@@ -9,6 +9,7 @@ struct ViewerState {
     var indexProgress: Double // 0...1
     /// キャレット位置（1 始まりの行・桁）。キャレットの無い表示（フィルタ・構造化・diff）では nil。
     var caret: (line: Int, column: Int)?
+    var columnSelectionCount: Int? = nil
 }
 
 /// 1 ドキュメント＝1 ペインの共通インターフェース。
@@ -20,6 +21,10 @@ struct ViewerState {
 /// 検索・追従・行ジャンプは `LargeFileViewer` 固有の機能。編集ペインでは
 /// 既定実装（no-op）に委ね、`supportsSearch` / `supportsFollow` で能力を申告する。
 protocol DocumentPane: NSView {
+    var supportsMarkdownPreview: Bool { get }
+    func toggleMarkdownPreview()
+    var markdownPreviewVisible: Bool { get }
+    func setMarkdownPreviewVisible(_ visible: Bool)
     /// 開いているファイル（サイドバー／タイトル表示用）。
     var fileURL: URL? { get }
 
@@ -29,6 +34,8 @@ protocol DocumentPane: NSView {
     /// 引数は (現在, 総数, 走査中, 進捗%, 正規表現が不正, **総数が上限で打ち切られたか**)。
     /// 最後の印が真なら総数は下限＝検索バーは「N 件以上」と出す（丸めた数を言わない）。
     var onSearchState: ((Int, Int, Bool, Int, Bool, Bool) -> Void)? { get set }
+    /// 查找全部结果（0 始行号、最多 500 项及是否还有更多）。
+    var onSearchResults: (([(Int, String)], Bool) -> Void)? { get set }
     /// ファイルがドロップされたとき（新規ドキュメントとして開くのはコントローラ側）。
     var onDropFiles: (([URL]) -> Void)? { get set }
 
@@ -61,6 +68,7 @@ protocol DocumentPane: NSView {
     func applyDisplaySettings()
 
     /// 検索に対応するか（検索バーを出してよいか）。
+    var searchResultsLeadingInset: CGFloat { get }
     var supportsSearch: Bool { get }
     /// 「一致行だけ表示」（フィルタ）に対応するか。対応しないペインでは漏斗ボタンを隠す。
     var supportsSearchFilter: Bool { get }
@@ -113,6 +121,9 @@ protocol DocumentPane: NSView {
     /// セッション復元用の本文（未保存の新規ドキュメントを保存/再現するため）。
     /// 大ファイル等・復元非対応のペインは nil（既定）。
     var restorableText: String? { get }
+    var contentRevision: Int { get }
+    func revealSourceByteOffset(_ offset: Int)
+    func inspectorDataProvider() -> ((_ cancelled: () -> Bool) throws -> Data)?
 
     // MARK: - 未保存の本文の保護（DraftStore）
 
@@ -136,6 +147,7 @@ protocol DocumentPane: NSView {
     func printDocument()
 
     // 検索／追従／行ジャンプ（編集ペインでは既定で no-op）。
+    @discardableResult func useSelectionSearch(_ enabled: Bool) -> Bool
     func setSearchQuery(_ q: String)
     func setCaseSensitive(_ on: Bool)
     func setRegexMode(_ on: Bool)
@@ -149,6 +161,8 @@ protocol DocumentPane: NSView {
     func showOnlyLines(_ lines: [Int])
     func findNext()
     func findPrev()
+    func findAll()
+    func replacementPreview(_ replacement: String) -> ReplacementPreview?
     func setFollowMode(_ on: Bool)
     var isFollowing: Bool { get }
     func goToLine(_ line1Based: Int)
@@ -216,7 +230,14 @@ protocol DocumentPane: NSView {
 }
 
 extension DocumentPane {
+    var onSearchResults: (([(Int, String)], Bool) -> Void)? {
+        get { nil }
+        set {}
+    }
+    var searchResultsLeadingInset: CGFloat { 0 }
     var supportsSearch: Bool { true }
+    func findAll() {}
+    func replacementPreview(_ replacement: String) -> ReplacementPreview? { nil }
     var supportsSearchFilter: Bool { true }
     var supportsReplace: Bool { true }
     var supportsFollow: Bool { true }
@@ -250,6 +271,9 @@ extension DocumentPane {
     var canEdit: Bool { false }
     var isDirty: Bool { false }
     var restorableText: String? { nil }
+    var contentRevision: Int { 0 }
+    func revealSourceByteOffset(_ offset: Int) {}
+    func inspectorDataProvider() -> ((_ cancelled: () -> Bool) throws -> Data)? { nil }
 
     // 未保存の本文を持たないペイン（読み取り専用・巨大ファイル）は draft と無縁。
     var draftID: String? { nil }
@@ -262,6 +286,7 @@ extension DocumentPane {
     var canPrint: Bool { false }
     func printDocument() {}
 
+    @discardableResult func useSelectionSearch(_ enabled: Bool) -> Bool { !enabled }
     func setSearchQuery(_ q: String) {}
     func setCaseSensitive(_ on: Bool) {}
     func setRegexMode(_ on: Bool) {}
@@ -309,4 +334,11 @@ extension DocumentPane {
 
     func applyLineWrap() {}
     func ensureVisibleLayout() {}
+}
+
+extension DocumentPane {
+    var supportsMarkdownPreview: Bool { false }
+    func toggleMarkdownPreview() {}
+    var markdownPreviewVisible: Bool { false }
+    func setMarkdownPreviewVisible(_ visible: Bool) {}
 }

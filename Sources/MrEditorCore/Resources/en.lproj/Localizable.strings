@@ -260,6 +260,10 @@
 "search.replacePlaceholder" = "Replace with";
 "search.replace" = "Replace";
 "search.replaceAll" = "Replace All";
+"search.findAll" = "Find All";
+"search.results" = "Search Results";
+"search.resultRow" = "Line %1$d  %@";
+"search.resultsCapped" = "Showing first %d results";
 "search.recentSearches" = "Recent Searches";
 "search.noRecentSearches" = "No Recent Searches";
 "search.clearRecentSearches" = "Clear Recent Searches";
@@ -411,3 +415,230 @@
 "remote.following" = "Following the tail.";
 "remote.followEnded" = "Following ended.";
 "remote.followStop" = "Stop";
+
+/* Independent SSH connections */
+"ssh.quick" = "Quick Connect";
+"ssh.saved" = "Saved Connections";
+"ssh.host" = "Server";
+"ssh.port" = "Port";
+"ssh.user" = "Username";
+"ssh.auth" = "Authentication";
+"ssh.password" = "Password";
+"ssh.key" = "Private Key";
+"ssh.secret" = "Password / Passphrase";
+"ssh.choose" = "Choose…";
+"ssh.path" = "Log Path";
+"ssh.follow" = "Follow new lines after opening";
+"ssh.advanced" = "Advanced Settings";
+"ssh.jump" = "Connect through a jump host";
+"ssh.remember" = "Remember credentials in macOS Keychain";
+"ssh.name" = "Connection Name";
+"ssh.test" = "Test Connection";
+"ssh.connectOnce" = "Connect Without Saving";
+"ssh.saveConnect" = "Save and Connect";
+"ssh.cancel" = "Cancel";
+"ssh.saveChanges" = "Save Changes";
+"ssh.nameRequired" = "Enter a connection name.";
+"ssh.empty" = "No saved connections. Use Quick Connect, then choose Save and Connect.";
+"ssh.credentialsSaved" = "Credentials saved in Keychain";
+"ssh.credentialsAsk" = "Provide credentials when connecting";
+"ssh.connect" = "Connect";
+"ssh.edit" = "Edit";
+"ssh.duplicate" = "Duplicate";
+"ssh.delete" = "Delete";
+"ssh.new" = "＋ New Connection";
+"ssh.deleteTitle" = "Delete “%@”?";
+"ssh.deleteHint" = "Delete this connection and its stored credentials. Remote log files are not affected.";
+"ssh.testSuccess" = "Connected successfully. Authentication and directory access verified.";
+"ssh.connected" = "Opened in a remote log window.";
+"ssh.trustTitle" = "Verify This Server’s Fingerprint";
+"ssh.rememberHost" = "Remember this server identity";
+"ssh.trust" = "Trust and Continue";
+"ssh.credentialsTitle" = "Enter Connection Credentials";
+"ssh.invalidEndpoint" = "Enter a valid server, username, and port (1–65535).";
+"ssh.invalidKey" = "Choose a readable private key file; its path must not contain newlines or %.";
+"ssh.invalidPath" = "The log path must be absolute and contain no newlines.";
+"ssh.keychainError" = "Could not update SSH credentials in Keychain. Saving did not complete.";
+"ssh.fileMissing" = "Log file is missing or is not a regular file: %@";
+"ssh.passphrase" = "Key Passphrase";
+"ssh.disconnect" = "Disconnect";
+
+/* Remote directory picker */
+"ssh.startDirectory" = "Starting Directory";
+"ssh.directoryHint" = "Choose the file to open after connecting to this directory.";
+"ssh.directoryInvalid" = "Enter an absolute remote directory starting with /.";
+"ssh.directoryResponse" = "Could not read a complete directory listing. Check filename encoding or server login output and retry.";
+"ssh.directoryUnavailable" = "Directory not found or access denied: %@";
+"ssh.parentDirectory" = "Up";
+"ssh.goDirectory" = "Go";
+"ssh.refreshDirectory" = "Refresh";
+"ssh.openFile" = "Open File";
+"ssh.chooseRemoteFile" = "Choose Remote File";
+"ssh.serverConnected" = "Connected · %@";
+"ssh.currentDirectory" = "Current Directory";
+"ssh.filenameFilter" = "Filter by filename…";
+"ssh.sortNewest" = "Modified: Newest First";
+"ssh.sortName" = "Filename: A → Z";
+"ssh.fileName" = "Name";
+"ssh.fileSize" = "Size";
+"ssh.fileModified" = "Modified";
+"ssh.backConnection" = "Back";
+"ssh.loadingDirectory" = "Reading remote directory…";
+"ssh.enterDirectory" = "Enter Directory";
+"ssh.compressedRemote" = "Opening compressed remote files is not yet supported.";
+"ssh.unsupportedRemoteEntry" = "Select a regular file or directory.";
+"ssh.selectedFile" = "Selected: %@";
+"ssh.emptyDirectory" = "This directory is empty. Go up or enter another directory.";
+"ssh.noMatchingFiles" = "No matching files. Change the filename filter.";
+"ssh.selectFileHint" = "Select a file to open. Double-click a folder to enter it.";
+"ssh.directoryLimited" = "Large directory: showing only the first %d entries.";
+"ssh.openingFile" = "Checking and opening file…";
+"ssh.chooseAnotherFile" = "Choose Another File…";
+
+"entry.local" = "Open Local File";
+"entry.remote" = "Open Remote File";
+
+"workspace.files" = "Files";
+"workspace.connections" = "Connections";
+"workspace.opened" = "Open documents";
+"workspace.noConnections" = "No saved connections";
+"workspace.manage" = "Manage Connections…";
+"workspace.regex" = "Regex";
+"workspace.case" = "Match case";
+"workspace.context" = "Context";
+"workspace.live" = "Live tail";
+"workspace.readOnly" = "Read only";
+"workspace.visibleLines" = "%d visible lines";
+"workspace.welcome" = "Start with a file";
+"workspace.welcomeHint" = "Open a local file or connect to a server to read logs.";
+"workspace.filterPlaceholder" = "Filter log content…";
+"workspace.local" = "Local";
+"workspace.servers" = "Servers";
+"workspace.newServer" = "＋ New Server";
+"workspace.openLocal" = "＋ Open File";
+"workspace.manageServers" = "Manage Servers…";
+"workspace.expandServer" = "Expand or collapse server files";
+"workspace.connectionFailed" = "Server connection failed";
+
+"ssh.editServerTitle" = "Edit Server · %@";
+
+"markdown.preview" = "Preview";
+"markdown.closePreview" = "Close Preview";
+"markdown.togglePreview" = "Markdown Preview";
+
+// Display mode menu
+"display.menu" = "Display Mode";
+"display.raw" = "Raw Text";
+"display.json" = "JSON";
+"display.ndjson" = "NDJSON";
+"display.csv" = "CSV";
+"display.tsv" = "TSV";
+"display.fixedWidth" = "Fixed-width View";
+
+"search.preview" = "Preview Replace All";
+
+"search.applySelected" = "Apply Selected";
+
+"search.undoReplacement" = "Undo Replacement";
+
+"search.selectAll" = "Select All";
+
+"search.selectNone" = "Select None";
+
+"search.previewCount" = "Selected %d of %d matches";
+
+"search.previewLimit" = "Preview limited to 500; only selected items will change";
+
+"search.previewStale" = "Document changed. Close and preview again.";
+
+"search.applied" = "Replaced %d matches. Not saved.";
+
+"search.undone" = "Replacement undone";
+
+"search.previewUnavailable" = "Finish searching and return to editable source before previewing.";
+
+"search.toggleReplace" = "Show / Hide Replace";
+"search.closePreview" = "Close";
+
+"search.findReplace" = "Find & Replace";
+
+"search.currentFile" = "Scope: Current File";
+
+"search.filterLines" = "Matching Lines";
+
+"search.collapse" = "Collapse";
+
+"search.resizeResults" = "Drag to resize search results";
+
+"search.deleteSummary" = "Delete %d matches in %d lines";
+
+"search.changeSummary" = "Change %d matches in %d lines";
+
+"search.lineChanges" = "Line %d · %d matches";
+
+"search.expandMatches" = "Choose matches";
+
+"search.before" = "Before";
+
+"search.after" = "After";
+
+"search.occurrence" = "Column %d";
+
+"search.deleteText" = "Delete";
+
+"defaults.title" = "Default Apps";
+
+"defaults.hint" = "Select text types to open with MrEditor. macOS may ask for confirmation. Changes apply to all files of the same content type, including its other extensions.";
+
+"defaults.apply" = "Use MrEditor";
+
+"defaults.restore" = "Restore Selected";
+
+"defaults.refresh" = "Refresh";
+
+"defaults.none" = "Not set";
+
+"defaults.select" = "Select at least one type.";
+
+"defaults.working" = "Applying…";
+
+"defaults.noBackup" = "No available previous app";
+
+"defaults.unconfirmed" = "System change not confirmed";
+
+"defaults.done" = "Updated %d types.";
+
+// Search scope, comparison and default application management
+"scope.current" = "Scope: Current file";
+"scope.selection" = "Scope: Selection";
+"scope.open" = "Scope: All open files";
+"scope.selectFirst" = "Select a range in an editable text document first.";
+"search.applyCount" = "Replace %d selected";
+"defaults.customHint" = "Extensions, e.g. toml, cfg (comma separated)";
+"defaults.add" = "Add";
+"defaults.restoreAll" = "Restore all originals";
+"defaults.documents" = "Text and documents";
+"defaults.data" = "Data and configuration";
+"defaults.code" = "Code and scripts";
+"defaults.custom" = "Custom extensions";
+"defaults.invalidExtension" = "Enter valid extensions separated by commas.";
+"defaults.managed" = "✓ Opens with MrEditor";
+"diff.pickDocuments" = "Choose two open documents to compare";
+"diff.left" = "Left document";
+"diff.right" = "Right document";
+"diff.chooseDifferent" = "Choose two different documents.";
+"diff.previousAction" = "Previous difference";
+"diff.nextAction" = "Next difference";
+"diff.copyLeft" = "Copy left difference";
+"diff.copyRight" = "Copy right difference";
+"diff.adoptAction" = "Left → Right";
+"diff.revertAction" = "Revert this change";
+"diff.saveAction" = "Save merged result as…";
+"search.undoStale" = "The document has changed. Use the Edit menu to undo subsequent edits first.";
+
+// Column editing
+"menu.columnMode" = "Column mode (rectangular selection)";
+"column.hint" = "Drag a rectangle to edit multiple lines. Short lines stop at the line end. Esc exits column mode.";
+"column.status" = "Column mode · %d lines · Esc to exit";
+"column.pasteMismatch" = "Clipboard has %d lines; selection has %d lines";
+"column.pasteHint" = "One line is repeated at every selection. Multiple lines must match the number of selections.";

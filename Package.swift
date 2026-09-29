@@ -20,8 +20,10 @@ let package = Package(
         .library(name: "MrEditorCore", targets: ["MrEditorCore"])
     ],
     targets: [
+        .systemLibrary(name: "CMarkdown", path: "Sources/CMarkdown"),
         .target(
             name: "MrEditorCore",
+            dependencies: ["CMarkdown"],
             path: "Sources/MrEditorCore",
             resources: [
                 .process("Resources")

@@ -11,6 +11,7 @@ import Foundation
 public final class RemoteSession {
 
     public let target: RemoteFile.Target
+    let transport: SSHTransport?
     /// 向こうに在ったコマンド。欠けていれば、その機能を畳む材料（`degraded`）。
     public let capabilities: RemoteFile.Capabilities
 
@@ -26,8 +27,9 @@ public final class RemoteSession {
         case cannotRead
     }
 
-    private init(target: RemoteFile.Target, capabilities: RemoteFile.Capabilities) {
+    private init(target: RemoteFile.Target, capabilities: RemoteFile.Capabilities, transport: SSHTransport? = nil) {
         self.target = target
+        self.transport = transport
         self.capabilities = capabilities
     }
 
@@ -42,13 +44,38 @@ public final class RemoteSession {
         return RemoteSession(target: target, capabilities: caps)
     }
 
+    static func connect(using transport: SSHTransport, requireFile: Bool = true) throws -> RemoteSession {
+        let c = transport.connection
+        let target = RemoteFile.Target(host: "\(c.endpoint.user)@\(c.endpoint.host)", path: c.path)
+        let out = try run(host: target.host, command: RemoteFile.capabilityCommand(), timeout: 120, transport: transport)
+        let caps = RemoteFile.Capabilities.parse(String(decoding: out, as: UTF8.self))
+        guard caps.canRead else { throw Failure.cannotRead }
+        let session = RemoteSession(target: target, capabilities: caps, transport: transport)
+        if requireFile { try session.checkReadableFile(c.path) }
+        try transport.persistTrustedHosts()
+        return session
+    }
+
+    func selectingFile(_ path: String) throws -> RemoteSession {
+        try RemoteDirectory.validate(path)
+        try checkReadableFile(path)
+        return RemoteSession(target: .init(host: target.host, path: path), capabilities: capabilities, transport: transport)
+    }
+
+    private func checkReadableFile(_ path: String) throws {
+        let quotedPath = RemoteFile.shellQuote(path)
+        let missing = RemoteFile.shellQuote(L("ssh.fileMissing", path))
+        let check = "if test -f \(quotedPath); then head -c 1 < \(quotedPath) > /dev/null; else printf '%s\\n' \(missing) >&2; exit 1; fi"
+        _ = try Self.run(host: target.host, command: check, timeout: 30, transport: transport)
+    }
+
     /// 総バイト数。訊けなければ nil ＝ **「不明」**（0 とは書かない）。
     public func size(timeout: TimeInterval = 20) -> Int? {
         guard capabilities.canSize else { return nil }
         guard let out = try? Self.run(
             host: target.host,
             command: RemoteFile.sizeCommand(target.path),
-            timeout: timeout
+            timeout: timeout, transport: transport
         ) else { return nil }
         return RemoteFile.parseSize(String(decoding: out, as: UTF8.self))
     }
@@ -60,7 +87,7 @@ public final class RemoteSession {
         guard let out = try? Self.run(
             host: target.host,
             command: RemoteFile.lineCountCommand(target.path),
-            timeout: timeout
+            timeout: timeout, transport: transport
         ) else { return nil }
         return RemoteFile.parseSize(String(decoding: out, as: UTF8.self))
     }
@@ -101,7 +128,7 @@ public final class RemoteSession {
         return try? Self.run(
             host: target.host,
             command: RemoteFile.readCommand(target.path, offset: offset, length: length),
-            timeout: timeout
+            timeout: timeout, transport: transport
         )
     }
 
@@ -124,7 +151,7 @@ public final class RemoteSession {
         )
         // 大きなファイルを舐めるので時間は長め。それでも切るのは、
         // 遠隔では「遅い」と「死んだ」が見分けられないため。
-        guard let out = try? Self.run(host: target.host, command: command, timeout: timeout) else {
+        guard let out = try? Self.run(host: target.host, command: command, timeout: timeout, transport: transport) else {
             return nil
         }
         return RemoteFile.parseGrep(String(decoding: out, as: UTF8.self))
@@ -136,7 +163,7 @@ public final class RemoteSession {
         return try? Self.run(
             host: target.host,
             command: RemoteFile.tailCommand(target.path, bytes: bytes),
-            timeout: timeout
+            timeout: timeout, transport: transport
         )
     }
 
@@ -157,10 +184,11 @@ public final class RemoteSession {
     /// `/usr/bin/ssh` を直接起動する。**`/bin/sh -c` を挟まない** ――
     /// 挟むと引数がもう一段シェルに解釈され、こちらで包んだ引用符が意味を失う。
     /// 向こう側で 1 回だけシェルに渡るのが正しい（`RemoteFile.shellQuote` はそのための包み）。
-    static func run(host: String, command: String, timeout: TimeInterval) throws -> Data {
+    static func run(host: String, command: String, timeout: TimeInterval, transport: SSHTransport? = nil) throws -> Data {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
         proc.arguments = RemoteFile.sshArguments(host: host, remoteCommand: command)
+        transport?.configure(proc, command: command)
 
         let outPipe = Pipe(), errPipe = Pipe()
         proc.standardOutput = outPipe

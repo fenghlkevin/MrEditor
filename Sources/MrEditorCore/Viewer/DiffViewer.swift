@@ -37,6 +37,7 @@ final class DiffViewer: NSView, DocumentPane {
     private let rightLabel = NSTextField(labelWithString: "")
     private let summary = NSTextField(labelWithString: "")
     private let gutter = MergeGutter()
+    private let actions = NSStackView()
 
     private var left: DiffSource?
     private var right: DiffSource?
@@ -53,7 +54,7 @@ final class DiffViewer: NSView, DocumentPane {
     private var topRow = 0
     private var scrollAccumulator: CGFloat = 0
     private let scrollerWidth: CGFloat = 16
-    private let headerHeight: CGFloat = 28
+    private let headerHeight: CGFloat = 62
 
     /// 行内差分のキャッシュ（可視行のぶんだけ。スクロールで捨てる）。
     private var charDiffCache: [Int: (left: [Range<Int>], right: [Range<Int>])] = [:]
@@ -124,6 +125,16 @@ final class DiffViewer: NSView, DocumentPane {
         summary.textColor = theme.chromeSecondaryText
         summary.alignment = .right
         header.addSubview(summary)
+
+        let buttons: [(String, Selector)] = [("diff.previousAction", #selector(previousAction)), ("diff.nextAction", #selector(nextAction)),
+            ("diff.copyLeft", #selector(copyLeft)), ("diff.copyRight", #selector(copyRight)),
+            ("diff.adoptAction", #selector(adoptAction)), ("diff.revertAction", #selector(revertAction)), ("diff.saveAction", #selector(saveAction))]
+        actions.spacing = 6
+        for (title, action) in buttons {
+            let button = NSButton(title: L(title), target: self, action: action); button.bezelStyle = .rounded
+            actions.addArrangedSubview(button)
+        }
+        header.addSubview(actions)
 
         gutter.onToggle = { [weak self] op in self?.toggleHunk(op) }
         addSubview(gutter)
@@ -523,6 +534,27 @@ final class DiffViewer: NSView, DocumentPane {
         refresh()
     }
 
+    @objc private func nextAction() { nextHunk() }
+    @objc private func previousAction() { previousHunk() }
+    @objc private func adoptAction() { adoptCurrentHunk() }
+    @objc private func revertAction() { revertCurrentHunk() }
+    @objc private func saveAction() { saveMerged() }
+    @objc private func copyLeft() { copyHunk(leftSide: true) }
+    @objc private func copyRight() { copyHunk(leftSide: false) }
+    private func copyHunk(leftSide: Bool) {
+        guard let model, let op = currentHunkOp, let source = leftSide ? left : right else { NSSound.beep(); return }
+        let start: Int, count: Int
+        switch model.ops[op] {
+        case .equal: return
+        case let .delete(line, n): start = line; count = leftSide ? n : 0
+        case let .insert(line, n): start = line; count = leftSide ? 0 : n
+        case let .replace(l, lc, r, rc): start = leftSide ? l : r; count = leftSide ? lc : rc
+        }
+        guard count > 0 else { NSSound.beep(); return }
+        let value = (start..<(start + count)).map { source.line(at: $0) }.joined(separator: "\n")
+        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(value, forType: .string)
+    }
+
     // MARK: - マージ
 
     /// 選んでいるハンクがあるか（メニューの有効化）。
@@ -680,10 +712,11 @@ final class DiffViewer: NSView, DocumentPane {
         header.frame = NSRect(x: 0, y: h - headerHeight, width: w, height: headerHeight)
         let gutterW: CGFloat = 30
         let colW = max(0, (w - scrollerWidth - gutterW) / 2)
-        leftLabel.frame = NSRect(x: 10, y: 5, width: colW - 20, height: 18)
-        rightLabel.frame = NSRect(x: colW + 40, y: 5, width: max(0, colW - 160), height: 18)
-        summary.frame = NSRect(x: w - scrollerWidth - 240, y: 5, width: 230, height: 18)
+        leftLabel.frame = NSRect(x: 10, y: 37, width: colW - 20, height: 18)
+        rightLabel.frame = NSRect(x: colW + 40, y: 37, width: max(0, colW - 160), height: 18)
+        summary.frame = NSRect(x: w - scrollerWidth - 240, y: 37, width: 230, height: 18)
 
+        actions.frame = NSRect(x: 8, y: 3, width: min(w - 24, actions.fittingSize.width), height: 28)
         let bodyH = max(0, h - headerHeight)
         leftView.frame = NSRect(x: 0, y: 0, width: colW, height: bodyH)
         gutter.frame = NSRect(x: colW, y: 0, width: gutterW, height: bodyH)

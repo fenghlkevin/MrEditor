@@ -6,7 +6,8 @@ import AppKit
 /// （custom draw を持つビューに子コントロールを同居させると、同一ウィンドウ内の
 /// 別のカスタム描画ビューの合成が壊れる macOS の不具合を避けるため。[StatusBarView] 同様。）
 final class SearchBarView: NSView, NSSearchFieldDelegate {
-    static let height: CGFloat = 72   // 2 段（検索 / 置換）
+    static let height: CGFloat = 166   // 查找与替换两行
+    private static let resultsHeight: CGFloat = 220
 
     private let field = NSSearchField()
     private let countLabel = NSTextField(labelWithString: "")
@@ -23,6 +24,15 @@ final class SearchBarView: NSView, NSSearchFieldDelegate {
     private let replaceButton = NSButton()
     private let replaceAllButton = NSButton()
     private let preserveCaseToggle = NSButton()
+    private let findAllButton = NSButton()
+    private let resultSummary = NSTextField(labelWithString: "")
+    private var replaceRowView: NSView?
+    private let modeButton = NSButton()
+    private let selectAll = NSButton()
+    private let selectNone = NSButton()
+    private let resultsScroll = NSScrollView()
+    private let resultsTable = NSTableView()
+    private var resultRows: [(line: Int, text: String)] = []
 
     var onQueryChange: ((String) -> Void)?
     var onNext: (() -> Void)?
@@ -38,6 +48,9 @@ final class SearchBarView: NSView, NSSearchFieldDelegate {
     var onReplace: ((String) -> Void)?
     var onReplaceAll: ((String) -> Void)?
     var onPreserveCaseToggle: ((Bool) -> Void)?
+    var onHeightChange: ((CGFloat) -> Void)?
+    var onFindAll: (() -> Void)?
+    var onSelectResult: ((Int) -> Void)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -48,139 +61,229 @@ final class SearchBarView: NSView, NSSearchFieldDelegate {
         setup()
     }
 
+    let scopeSelector = NSPopUpButton()
+    var onScopeChange: ((Int) -> Void)?
+    var onSelectResultIndex: ((Int) -> Void)?
+    var onSelectPreviewDetail: ((ReplacementDetail) -> Void)?
+    var scope: Int { scopeSelector.indexOfSelectedItem }
+    var caseSensitive: Bool { caseToggle.state == .on }
+    var regexMode: Bool { regexToggle.state == .on }
+    var preserveCase: Bool { preserveCaseToggle.state == .on }
+    @objc private func scopeChanged() {
+        collapseResults(); preview = nil; onScopeChange?(scope)
+    }
+    private let modeSelector = NSSegmentedControl()
+    let resultsArea = NSView()
+    var onResultsHeightChange: ((CGFloat) -> Void)?
+    private let applyPreviewButton = NSButton()
+    private let undoPreviewButton = NSButton()
+    private var preview: ReplacementPreview?
+    private var selectedPreview = Set<Int>()
+    private var previewApplied = false
+    private var expandedLines = Set<Int>()
+    var onDirectReplaceAll: ((String) -> Void)?
+    private var previewGroups: [[Int]] {
+        guard let preview else { return [] }
+        var groups: [[Int]] = []
+        for i in preview.details.indices {
+            if let last = groups.last?.first, preview.details[last].line == preview.details[i].line, preview.details[last].documentID == preview.details[i].documentID { groups[groups.count - 1].append(i) }
+            else { groups.append([i]) }
+        }
+        return groups
+    }
+    private var headerHeight: CGFloat { modeSelector.selectedSegment == 0 ? 124 : 166 }
+
     private func setup() {
         wantsLayer = true
-        layer?.cornerRadius = 9
-        layer?.borderWidth = 1
         applyColors()
-
         field.placeholderString = L("search.placeholder")
-        field.delegate = self
-        field.target = self
-        field.action = #selector(enterPressed)
-        field.sendsWholeSearchString = false
+        field.delegate = self; field.target = self; field.action = #selector(enterPressed)
         field.sendsSearchStringImmediately = false
-        (field.cell as? NSSearchFieldCell)?.searchButtonCell?.isTransparent = false
-        // 検索語の履歴。`recentsAutosaveName` は「`recentSearches` をユーザ既定へ
-        // 自動で読み書きする」までしかやってくれない——**配列に積むのはこちら側の仕事**
-        // （最初 Enter だけで自動的に溜まると思っていたが実機で溜まらず、勘違いだった）。
-        // `searchMenuTemplate` も**空の NSMenu では何も出ない**——見出し・一覧・クリアの
-        // 挿入位置を示す専用タグ付きの項目を自分で置く必要がある（もう一つの勘違い。
-        // 空メニューを立てれば AppKit が勝手に組み立ててくれると思っていた）。
         field.recentsAutosaveName = "MrEditor.searchHistory"
-        field.searchMenuTemplate = Self.makeSearchMenuTemplate()
-        field.maximumRecents = 10
-
-        countLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        countLabel.alignment = .right
-        countLabel.setContentHuggingPriority(.required, for: .horizontal)
-
-        // 大小区別トグル（Aa）
-        caseToggle.title = "Aa"
-        caseToggle.setButtonType(.pushOnPushOff)
-        caseToggle.bezelStyle = .roundRect
-        caseToggle.font = .monospacedSystemFont(ofSize: 11, weight: .semibold)
-        caseToggle.target = self
-        caseToggle.action = #selector(caseTapped)
-        caseToggle.toolTip = "大文字小文字を区別 / Case sensitive"
-        caseToggle.setContentHuggingPriority(.required, for: .horizontal)
-
-        // 正規表現トグル（.*）
-        regexToggle.title = ".*"
-        regexToggle.setButtonType(.pushOnPushOff)
-        regexToggle.bezelStyle = .roundRect
-        regexToggle.font = .monospacedSystemFont(ofSize: 11, weight: .semibold)
-        regexToggle.target = self
-        regexToggle.action = #selector(regexTapped)
-        regexToggle.toolTip = "正規表現（先読み・後読み対応） / Regular expression (lookahead/lookbehind)"
-        regexToggle.setContentHuggingPriority(.required, for: .horizontal)
-
-        // フィルタ表示トグル（漏斗）
-        filterToggle.image = NSImage(systemSymbolName: "line.3.horizontal.decrease", accessibilityDescription: nil)
-        filterToggle.setButtonType(.pushOnPushOff)
-        filterToggle.bezelStyle = .roundRect
-        filterToggle.imageScaling = .scaleProportionallyDown
-        filterToggle.target = self
-        filterToggle.action = #selector(filterTapped)
-        filterToggle.toolTip = "一致行だけ表示 / Show matching lines only"
-        filterToggle.setContentHuggingPriority(.required, for: .horizontal)
-
-        // 前後 N 行（grep -C）。絞り込みの隣に置く＝絞り込んだ人の目に入る位置。
-        contextLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
-        contextLabel.setContentHuggingPriority(.required, for: .horizontal)
-        contextField.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        contextField.alignment = .right
-        contextField.placeholderString = "0"
-        contextField.target = self
-        contextField.action = #selector(contextEdited)   // Enter・フォーカスを外したとき
-        contextField.toolTip = "一致行の前後も出す（grep -C） / Also show N lines around each match"
-        contextField.setContentHuggingPriority(.required, for: .horizontal)
-
-        let prev = iconButton("chevron.up", #selector(prevTapped))
-        let next = iconButton("chevron.down", #selector(nextTapped))
-        let close = iconButton("xmark", #selector(closeTapped))
-
-        // 件数（「18 件中 1 件目」）も縮めさせない。末尾が切れると何件目か読めない。
-        keepIntrinsicWidth([caseToggle, regexToggle, filterToggle, contextLabel, countLabel,
-                            preserveCaseToggle, replaceButton, replaceAllButton])
-
-        let findRow = NSStackView(views: [field, caseToggle, regexToggle, filterToggle,
-                                          contextLabel, contextField, countLabel, prev, next, close])
-        findRow.orientation = .horizontal
-        findRow.spacing = 6
-
-        // 置換の行。
+        field.searchMenuTemplate = Self.makeSearchMenuTemplate(); field.maximumRecents = 10
         replaceField.placeholderString = L("search.replacePlaceholder")
-        replaceField.font = field.font
-        replaceField.target = self
-        replaceField.action = #selector(replaceTapped)   // Enter で「置換」
-        replaceButton.title = L("search.replace")
-        replaceButton.bezelStyle = .rounded
-        replaceButton.target = self
-        replaceButton.action = #selector(replaceTapped)
-        replaceButton.setContentHuggingPriority(.required, for: .horizontal)
-        replaceAllButton.title = L("search.replaceAll")
-        replaceAllButton.bezelStyle = .rounded
-        replaceAllButton.target = self
-        replaceAllButton.action = #selector(replaceAllTapped)
-        replaceAllButton.setContentHuggingPriority(.required, for: .horizontal)
-
-        // ケース維持トグル（Aa→aA）。大小区別なしで拾った一致の綴りを置換文字列へ引き継ぐ。
-        preserveCaseToggle.title = "aA"
-        preserveCaseToggle.setButtonType(.pushOnPushOff)
-        preserveCaseToggle.bezelStyle = .roundRect
-        preserveCaseToggle.font = .monospacedSystemFont(ofSize: 11, weight: .semibold)
-        preserveCaseToggle.target = self
-        preserveCaseToggle.action = #selector(preserveCaseTapped)
-        preserveCaseToggle.toolTip = "元の大文字小文字を維持して置換 / Preserve case when replacing"
-        preserveCaseToggle.setContentHuggingPriority(.required, for: .horizontal)
-
-        let replaceRow = NSStackView(views: [replaceField, preserveCaseToggle, replaceButton, replaceAllButton])
-        replaceRow.orientation = .horizontal
-        replaceRow.spacing = 6
-
-        let stack = NSStackView(views: [findRow, replaceRow])
-        stack.orientation = .vertical
-        stack.spacing = 7
-        stack.alignment = .leading
-        stack.distribution = .fillEqually
-        stack.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 6, right: 8)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-
+        replaceField.delegate = self
+        replaceField.target = self; replaceField.action = #selector(replaceTapped)
+        modeSelector.segmentCount = 2
+        modeSelector.setLabel(L("search.placeholder"), forSegment: 0)
+        modeSelector.setLabel(L("search.findReplace"), forSegment: 1)
+        modeSelector.selectedSegment = 1; modeSelector.target = self
+        modeSelector.action = #selector(toggleReplaceRow)
+        func configure(_ b: NSButton, _ title: String, _ action: Selector, toggle: Bool = false) {
+            b.title = title; b.target = self; b.action = action; b.bezelStyle = .rounded
+            if toggle { b.setButtonType(.pushOnPushOff) }
+            b.setContentHuggingPriority(.required, for: .horizontal)
+        }
+        configure(caseToggle, "Aa", #selector(caseTapped), toggle: true)
+        configure(regexToggle, ".*", #selector(regexTapped), toggle: true)
+        configure(filterToggle, L("search.filterLines"), #selector(filterTapped), toggle: true)
+        configure(preserveCaseToggle, "aA", #selector(preserveCaseTapped), toggle: true)
+        configure(findAllButton, L("search.findAll"), #selector(findAllTapped))
+        findAllButton.bezelColor = .controlAccentColor
+        configure(replaceButton, L("search.replace"), #selector(replaceTapped))
+        configure(replaceAllButton, L("search.preview"), #selector(replaceAllTapped))
+        configure(applyPreviewButton, L("search.applySelected"), #selector(applyPreview))
+        configure(undoPreviewButton, L("search.undoReplacement"), #selector(undoPreview))
+        undoPreviewButton.isEnabled = false
+        contextField.placeholderString = "0"; contextField.target = self; contextField.action = #selector(contextEdited)
+        contextField.widthAnchor.constraint(equalToConstant: 32).isActive = true
+        func row(_ views: [NSView]) -> NSStackView {
+            let r = NSStackView(views: views); r.spacing = 8
+            return r
+        }
+        func spacer() -> NSView { let v = NSView(); v.setContentHuggingPriority(.defaultLow, for: .horizontal); return v }
+        scopeSelector.addItems(withTitles: [L("scope.current"), L("scope.selection"), L("scope.open")])
+        scopeSelector.target = self; scopeSelector.action = #selector(scopeChanged)
+        let title = row([modeSelector, spacer(), scopeSelector, iconButton("xmark", #selector(closeTapped))])
+        let findLabel = NSTextField(labelWithString: L("search.placeholder"))
+        let replaceLabel = NSTextField(labelWithString: L("search.replacePlaceholder"))
+        for label in [findLabel, replaceLabel] { label.widthAnchor.constraint(equalToConstant: 54).isActive = true }
+        let find = row([findLabel, field, caseToggle, regexToggle, findAllButton])
+        let direct = NSButton(title: L("search.replaceAll"), target: self, action: #selector(directReplaceAll))
+        direct.bezelStyle = .rounded
+        let replace = row([replaceLabel, replaceField, preserveCaseToggle, replaceButton, direct, replaceAllButton])
+        replaceRowView = replace
+        let meta = row([countLabel, spacer(), filterToggle, contextLabel, contextField,
+                        iconButton("chevron.up", #selector(prevTapped)), iconButton("chevron.down", #selector(nextTapped)), undoPreviewButton])
+        let stack = NSStackView(views: [title, find, replace, meta])
+        stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 10
+        stack.translatesAutoresizingMaskIntoConstraints = false; addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            findRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -18),
-            replaceRow.widthAnchor.constraint(equalTo: findRow.widthAnchor),
-            // 詰まったときに縮むのは検索欄（打った語は自分で覚えているが、
-            // 件数やトグルは読めなくなると困る）。
-            field.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),
-            contextField.widthAnchor.constraint(equalToConstant: 30),
-            countLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 56),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: 12),
         ])
+        for r in [title, find, replace, meta] {
+            r.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+            r.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        }
+        field.widthAnchor.constraint(greaterThanOrEqualToConstant: 100).isActive = true
+        replaceField.widthAnchor.constraint(greaterThanOrEqualToConstant: 100).isActive = true
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("result"))
+        resultsTable.usesAlternatingRowBackgroundColors = true
+        resultsTable.style = .plain
+        resultsTable.addTableColumn(column); resultsTable.headerView = nil; resultsTable.rowHeight = 30
+        resultsTable.delegate = self; resultsTable.dataSource = self
+        resultsTable.target = self; resultsTable.action = #selector(resultDoubleClicked)
+        resultsScroll.documentView = resultsTable; resultsScroll.hasVerticalScroller = true
+        let collapse = NSButton(title: L("search.collapse"), target: self, action: #selector(collapseResults))
+        selectAll.title = L("search.selectAll"); selectAll.target = self; selectAll.action = #selector(selectPreviewAll)
+        selectNone.title = L("search.selectNone"); selectNone.target = self; selectNone.action = #selector(selectPreviewNone)
+        let heading = row([resultSummary, spacer(), selectAll, selectNone, applyPreviewButton, collapse])
+        for v in [heading, resultsScroll] { v.translatesAutoresizingMaskIntoConstraints = false; resultsArea.addSubview(v) }
+        NSLayoutConstraint.activate([
+            heading.topAnchor.constraint(equalTo: resultsArea.topAnchor, constant: 8),
+            heading.leadingAnchor.constraint(equalTo: resultsArea.leadingAnchor, constant: 18),
+            heading.trailingAnchor.constraint(equalTo: resultsArea.trailingAnchor, constant: -18),
+            heading.heightAnchor.constraint(equalToConstant: 28),
+            resultsScroll.topAnchor.constraint(equalTo: heading.bottomAnchor, constant: 8),
+            resultsScroll.leadingAnchor.constraint(equalTo: resultsArea.leadingAnchor),
+            resultsScroll.trailingAnchor.constraint(equalTo: resultsArea.trailingAnchor),
+            resultsScroll.bottomAnchor.constraint(equalTo: resultsArea.bottomAnchor),
+        ])
+        resultsArea.isHidden = true; applyPreviewButton.isHidden = true
     }
+
+    func showPreview(_ value: ReplacementPreview) {
+        selectAll.isHidden = false; selectNone.isHidden = false
+        expandedLines.removeAll()
+        preview = value; previewApplied = false; selectedPreview = Set(value.rows.indices)
+        resultsVisible = true; resultsArea.isHidden = false
+        resultSummary.isHidden = false; resultsScroll.isHidden = false
+        applyPreviewButton.isHidden = false; applyPreviewButton.isEnabled = !selectedPreview.isEmpty
+        resultSummary.stringValue = L("search.previewCount", selectedPreview.count, value.rows.count)
+            + (value.limited ? " · " + L("search.previewLimit") : "")
+        refreshPreviewSummary(); onResultsHeightChange?(300); resultsTable.reloadData()
+    }
+    @objc private func applyPreview() {
+        guard let preview else { return }
+        guard preview.apply(selectedPreview) else { resultSummary.stringValue = L("search.previewStale"); applyPreviewButton.isEnabled = false; return }
+        previewApplied = true; applyPreviewButton.isEnabled = false; undoPreviewButton.isEnabled = true
+        resultSummary.stringValue = L("search.applied", selectedPreview.count); resultsTable.reloadData()
+    }
+    @objc private func undoPreview() {
+        guard let preview, preview.canUndo() else {
+            resultSummary.stringValue = L("search.undoStale"); undoPreviewButton.isEnabled = false; return
+        }
+        preview.undo(); undoPreviewButton.isEnabled = false
+        resultSummary.stringValue = L("search.undone")
+    }
+    @objc private func togglePreview(_ button: NSButton) {
+        if button.state == .on { selectedPreview.insert(button.tag) } else { selectedPreview.remove(button.tag) }
+        applyPreviewButton.isEnabled = !selectedPreview.isEmpty
+        refreshPreviewSummary(); resultsTable.reloadData()
+    }
+    private func refreshPreviewSummary() {
+        guard let preview else { return }
+        let lines = Set(selectedPreview.map { preview.details[$0].documentID + ":" + String(preview.details[$0].line) }).count
+        applyPreviewButton.title = L("search.applyCount", selectedPreview.count)
+        let key = selectedPreview.allSatisfy({ preview.details[$0].replacement.isEmpty }) ? "search.deleteSummary" : "search.changeSummary"
+        resultSummary.stringValue = L(key, selectedPreview.count, lines) + (preview.limited ? " · " + L("search.previewLimit") : "")
+    }
+    @objc private func selectPreviewAll() {
+        guard let preview, !previewApplied else { return }
+        selectedPreview = Set(preview.details.indices); refreshPreviewSummary(); resultsTable.reloadData(); applyPreviewButton.isEnabled = !selectedPreview.isEmpty
+    }
+    @objc private func selectPreviewNone() {
+        guard preview != nil, !previewApplied else { return }
+        selectedPreview = []; refreshPreviewSummary(); resultsTable.reloadData(); applyPreviewButton.isEnabled = false
+    }
+    @objc private func directReplaceAll() { onDirectReplaceAll?(replaceField.stringValue) }
+    @objc private func toggleGroup(_ button: NSButton) {
+        let group = previewGroups[button.tag]
+        if group.allSatisfy({ selectedPreview.contains($0) }) { selectedPreview.subtract(group) } else { selectedPreview.formUnion(group) }
+        refreshPreviewSummary(); resultsTable.reloadData()
+        applyPreviewButton.isEnabled = !selectedPreview.isEmpty
+    }
+    @objc private func expandGroup(_ button: NSButton) {
+        if !expandedLines.insert(button.tag).inserted { expandedLines.remove(button.tag) }
+        resultsTable.reloadData()
+        resultsTable.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<previewGroups.count))
+    }
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        guard preview != nil, previewGroups.indices.contains(row) else { return 30 }
+        return 94 + (expandedLines.contains(row) ? CGFloat(previewGroups[row].count * 28) : 0)
+    }
+    private func previewCell(_ row: Int) -> NSView {
+        let preview = preview!, group = previewGroups[row], first = preview.details[group[0]]
+        let before = NSMutableAttributedString(string: first.source)
+        let after = NSMutableAttributedString(attributedString: before)
+        for i in group.reversed() where selectedPreview.contains(i) {
+            let d = preview.details[i]
+            guard NSMaxRange(d.range) <= before.length else { continue }
+            before.addAttributes([.foregroundColor: NSColor.systemRed, .strikethroughStyle: 1], range: d.range)
+            after.replaceCharacters(in: d.range, with: NSAttributedString(string: d.replacement, attributes: [.foregroundColor: NSColor.systemGreen]))
+        }
+        let check = NSButton(checkboxWithTitle: (first.documentName.isEmpty ? "" : first.documentName + " · ") + L("search.lineChanges", first.line, group.count), target: self, action: #selector(toggleGroup(_:)))
+        check.tag = row; check.allowsMixedState = true
+        let count = group.filter { selectedPreview.contains($0) }.count
+        check.state = count == 0 ? .off : (count == group.count ? .on : .mixed); check.isEnabled = !previewApplied
+        let expand = NSButton(title: L(expandedLines.contains(row) ? "search.collapse" : "search.expandMatches"), target: self, action: #selector(expandGroup(_:)))
+        expand.tag = row
+        let heading = NSStackView(views: group.count > 1 ? [check, expand] : [check]); heading.spacing = 16
+        let stack = NSStackView(views: [heading]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 5
+        for (label, value) in [(L("search.before"), before), (L("search.after"), after)] {
+            let text = NSTextField(labelWithString: "")
+            let content = NSMutableAttributedString(string: label + "   ", attributes: [.foregroundColor: NSColor.secondaryLabelColor])
+            content.append(value); text.attributedStringValue = content
+            text.lineBreakMode = .byTruncatingTail; text.toolTip = content.string
+            stack.addArrangedSubview(text)
+            text.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        }
+        if expandedLines.contains(row) {
+            for i in group {
+                let d = preview.details[i]
+                let text = (d.source as NSString).substring(with: d.range)
+                let button = NSButton(checkboxWithTitle: L("search.occurrence", d.range.location + 1) + "  " + text + " → " + (d.replacement.isEmpty ? L("search.deleteText") : d.replacement), target: self, action: #selector(togglePreview(_:)))
+                button.tag = i; button.state = selectedPreview.contains(i) ? .on : .off; button.isEnabled = !previewApplied
+                stack.addArrangedSubview(button)
+            }
+        }
+        let cell = NSView(); stack.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(stack)
+        NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 10), stack.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -10), stack.topAnchor.constraint(equalTo: cell.topAnchor, constant: 6)])
+        return cell
+    }
+    @objc private func collapseResults() { resultsVisible = false; resultsArea.isHidden = true; onResultsHeightChange?(0) }
 
     /// 文字のトグル（Aa / .*）は縮めさせない。詰まると「…」に化けて何のボタンか読めなくなる
     /// （±N の欄を足したときに実際そうなった）。狭いときに縮むのは検索欄の側でよい。
@@ -303,6 +406,7 @@ final class SearchBarView: NSView, NSSearchFieldDelegate {
     }
 
     func focusField() {
+        onHeightChange?(headerHeight)
         window?.makeFirstResponder(field)
         field.selectText(nil)
     }
@@ -330,7 +434,21 @@ final class SearchBarView: NSView, NSSearchFieldDelegate {
         countLabel.stringValue = Self.countText(query: query, current: current, total: total,
                                                 searching: searching, progress: progress,
                                                 invalid: invalid, capped: capped)
+        if resultsVisible && preview == nil { onFindAll?() }
     }
+
+    func setResults(_ rows: [(Int, String)], hasMore: Bool) {
+        guard preview == nil else { return }
+        resultRows = rows.map { ($0.0, $0.1) }
+        selectAll.isHidden = true; selectNone.isHidden = true
+        resultsTable.reloadData()
+        resultSummary.isHidden = !resultsVisible
+        resultsScroll.isHidden = !resultsVisible
+        resultSummary.stringValue = rows.isEmpty ? L("search.none") : (hasMore ? L("search.resultsCapped", rows.count) : L("search.found", String(rows.count)))
+        resultsTable.toolTip = hasMore ? L("search.resultsCapped", rows.count) : nil
+    }
+
+    private var resultsVisible = false
 
     /// 出す文言（UI から切り離してテストできるようにしてある）。
     static func countText(query: String, current: Int, total: Int, searching: Bool,
@@ -358,7 +476,14 @@ final class SearchBarView: NSView, NSSearchFieldDelegate {
 
     // MARK: - イベント
 
+    private func invalidatePreview() {
+        if preview != nil { collapseResults() }
+        preview = nil; undoPreviewButton.isEnabled = false; applyPreviewButton.isHidden = true
+        selectAll.isHidden = true; selectNone.isHidden = true
+    }
     func controlTextDidChange(_ obj: Notification) {
+        invalidatePreview()
+        resultsTable.reloadData()
         onQueryChange?(field.stringValue)
     }
 
@@ -386,8 +511,8 @@ final class SearchBarView: NSView, NSSearchFieldDelegate {
     @objc private func nextTapped() { onNext?() }
     @objc private func prevTapped() { onPrev?() }
     @objc private func closeTapped() { onClose?() }
-    @objc private func caseTapped() { onCaseToggle?(caseToggle.state == .on) }
-    @objc private func regexTapped() { onRegexToggle?(regexToggle.state == .on) }
+    @objc private func caseTapped() { invalidatePreview(); onCaseToggle?(caseToggle.state == .on) }
+    @objc private func regexTapped() { invalidatePreview(); onRegexToggle?(regexToggle.state == .on) }
     @objc private func filterTapped() {
         syncContextEnabled()
         onFilterToggle?(filterToggle.state == .on)
@@ -397,9 +522,34 @@ final class SearchBarView: NSView, NSSearchFieldDelegate {
         contextField.stringValue = n > 0 ? String(n) : ""   // 入力を丸めた結果を見せる
         onContextChange?(n)
     }
-    @objc private func preserveCaseTapped() { onPreserveCaseToggle?(preserveCaseToggle.state == .on) }
+    @objc private func preserveCaseTapped() { invalidatePreview(); onPreserveCaseToggle?(preserveCaseToggle.state == .on) }
     @objc private func replaceTapped() { onReplace?(replaceField.stringValue) }
     @objc private func replaceAllTapped() { onReplaceAll?(replaceField.stringValue) }
+    @objc private func toggleReplaceRow() {
+        if modeSelector.selectedSegment == 0 { collapseResults() }
+        replaceRowView?.isHidden = modeSelector.selectedSegment == 0
+        onHeightChange?(headerHeight)
+    }
+    @objc private func findAllTapped() {
+        preview = nil; undoPreviewButton.isEnabled = false; applyPreviewButton.isHidden = true
+        resultsVisible = true; resultsArea.isHidden = false
+        resultSummary.isHidden = false; resultsScroll.isHidden = false
+        onResultsHeightChange?(240)
+        onFindAll?()
+    }
+    @objc private func resultDoubleClicked() {
+        if let preview {
+            let row = resultsTable.clickedRow
+            if previewGroups.indices.contains(row) {
+                let detail = preview.details[previewGroups[row][0]]
+                if let onSelectPreviewDetail { onSelectPreviewDetail(detail) } else { onSelectResult?(detail.line) }
+            }
+            return
+        }
+        let row = resultsTable.clickedRow
+        guard row >= 0, row < resultRows.count else { return }
+        if let onSelectResultIndex { onSelectResultIndex(row) } else { onSelectResult?(resultRows[row].line + 1) }
+    }
 
     /// バーを閉じる時に状態をリセット。
     func clear() {
@@ -410,6 +560,12 @@ final class SearchBarView: NSView, NSSearchFieldDelegate {
         filterToggle.state = .off
         preserveCaseToggle.state = .off
         countLabel.stringValue = ""
+        collapseResults(); preview = nil; undoPreviewButton.isEnabled = false
+        resultSummary.isHidden = true
+        onHeightChange?(Self.height)
+        resultsScroll.isHidden = true
+        resultRows = []
+        resultsTable.reloadData()
         // 前後 N 行は消さない（アプリの設定として覚えている値なので、閉じるたびに 0 へ戻さない）。
         syncContextEnabled()
     }
@@ -421,5 +577,31 @@ final class SearchBarView: NSView, NSSearchFieldDelegate {
             return true
         }
         return false
+    }
+}
+
+extension SearchBarView: NSTableViewDataSource, NSTableViewDelegate {
+    func numberOfRows(in tableView: NSTableView) -> Int { preview == nil ? resultRows.count : previewGroups.count }
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        if preview != nil { return previewCell(row) }
+        guard resultRows.indices.contains(row) else { return nil }
+        let item = resultRows[row]
+        let cell = tableView.makeView(withIdentifier: NSUserInterfaceItemIdentifier("resultCell"), owner: self) as? NSTableCellView ?? {
+            let view = NSTableCellView()
+            let label = NSTextField(labelWithString: "")
+            label.lineBreakMode = .byTruncatingTail
+            label.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(label)
+            view.textField = label
+            NSLayoutConstraint.activate([
+                label.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 6),
+                label.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -6),
+                label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            ])
+            view.identifier = NSUserInterfaceItemIdentifier("resultCell")
+            return view
+        }()
+        cell.textField?.stringValue = "\(item.line + 1)  ·  \(item.text)"
+        return cell
     }
 }

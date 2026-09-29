@@ -10,6 +10,111 @@ final class EditorTextView: NSTextView {
     /// 不可視文字（タブ・改行・全角スペース・行末の半角スペース）を記号で見せるか。
     var showInvisibles: Bool = AppSettings.showInvisibles
 
+    private var rectangleAnchor: NSPoint?
+    private var rectangleFocus: NSPoint?
+    private(set) var columnModeEnabled = false
+    var onColumnModeChange: ((Bool) -> Void)?
+    var onColumnSelectionChange: (() -> Void)?
+    var columnSelectionCount: Int? { columnModeEnabled ? activeRanges.count : nil }
+
+    func setColumnMode(_ enabled: Bool) {
+        guard enabled != columnModeEnabled else { return }
+        columnModeEnabled = enabled
+        toolTip = enabled ? L("column.hint") : nil
+        rectangleAnchor = nil; rectangleFocus = nil
+        if !enabled { applyCarets([carets.last ?? selectedRange()]) }
+        onColumnModeChange?(enabled)
+        onColumnSelectionChange?()
+        window?.invalidateCursorRects(for: self)
+    }
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        if columnModeEnabled && isEditable { addCursorRect(visibleRect, cursor: .crosshair) }
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = (super.menu(for: event)?.copy() as? NSMenu) ?? NSMenu()
+        let item = NSMenuItem(title: L("menu.columnMode"), action: #selector(toggleColumnModeFromMenu(_:)), keyEquivalent: "")
+        item.target = self
+        item.state = columnModeEnabled ? .on : .off
+        item.isEnabled = isEditable
+        item.toolTip = L("column.hint")
+        if !menu.items.isEmpty { menu.addItem(.separator()) }
+        menu.addItem(item)
+        return menu
+    }
+
+    @objc private func toggleColumnModeFromMenu(_ sender: Any?) {
+        guard isEditable else { return }
+        setColumnMode(!columnModeEnabled)
+        window?.makeFirstResponder(self)
+    }
+
+    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(toggleColumnModeFromMenu(_:)) {
+            menuItem.state = columnModeEnabled ? .on : .off
+            return isEditable
+        }
+        return super.validateMenuItem(menuItem)
+    }
+
+    /// Select by rendered horizontal positions, preserving whole Unicode characters and tabs.
+    private func selectRectangle(from anchor: NSPoint, to point: NSPoint) {
+        let text = string as NSString
+        let a = min(characterIndexForInsertion(at: anchor), text.length)
+        let b = min(characterIndexForInsertion(at: point), text.length)
+        let first = text.lineRange(for: NSRange(location: min(a, b), length: 0)).location
+        let last = text.lineRange(for: NSRange(location: max(a, b), length: 0)).location
+        var line = first
+        var ranges: [NSRange] = []
+        while line <= last {
+            var start = 0, end = 0, contentEnd = 0
+            text.getLineStart(&start, end: &end, contentsEnd: &contentEnd, for: NSRange(location: line, length: 0))
+            guard let rect = caretRect(atCharIndex: line) else { break }
+            func index(_ x: CGFloat) -> Int {
+                min(contentEnd, max(start, characterIndexForInsertion(at: NSPoint(x: x, y: rect.midY))))
+            }
+            let left = index(min(anchor.x, point.x)), right = index(max(anchor.x, point.x))
+            ranges.append(NSRange(location: left, length: right - left))
+            if end <= line || end > last { break }
+            line = end
+        }
+        applyCarets(ranges)
+        rectangleAnchor = anchor; rectangleFocus = point
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if columnModeEnabled, isEditable, !hasMarkedText(), event.modifierFlags.contains(.shift),
+           event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
+           [123, 124, 125, 126].contains(event.keyCode),
+           let caret = caretRect(atCharIndex: selectedRange().location) {
+            let anchor = rectangleAnchor ?? NSPoint(x: caret.minX, y: caret.midY)
+            var focus = rectangleFocus ?? anchor
+            if event.keyCode == 123 || event.keyCode == 124 {
+                let width = EditorStyle.columnWidth(for: font ?? EditorFont.current())
+                focus.x = max(textContainerOrigin.x, focus.x + (event.keyCode == 123 ? -width : width))
+            } else {
+                let source = string as NSString
+                let index = min(characterIndexForInsertion(at: focus), source.length)
+                let line = source.lineRange(for: NSRange(location: index, length: 0))
+                let next: Int
+                if event.keyCode == 126 {
+                    guard line.location > 0 else { return }
+                    next = source.lineRange(for: NSRange(location: line.location - 1, length: 0)).location
+                } else {
+                    guard NSMaxRange(line) > line.location, NSMaxRange(line) <= source.length else { return }
+                    next = NSMaxRange(line)
+                }
+                guard let rect = caretRect(atCharIndex: next) else { return }
+                focus.y = rect.midY
+            }
+            selectRectangle(from: anchor, to: focus)
+            scrollRangeToVisible(NSRange(location: min(characterIndexForInsertion(at: focus), (string as NSString).length), length: 0))
+            return
+        }
+        super.keyDown(with: event)
+    }
+
     private var caretWidth: CGFloat {
         EditorStyle.caretWidth(for: font ?? EditorFont.current())
     }
@@ -158,7 +263,11 @@ final class EditorTextView: NSTextView {
     /// 自分で複数キャレットを置くときは `applyCarets` から `super` を直接呼ぶのでここを通らない。
     override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
         super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
-        if !carets.isEmpty { carets = []; needsDisplay = true }
+        rectangleAnchor = nil; rectangleFocus = nil
+        let normalized = MultiCursor.normalize(ranges.map { $0.rangeValue })
+        carets = normalized.count > 1 ? normalized : []
+        needsDisplay = true
+        onColumnSelectionChange?()
         if highlightCurrentLine { needsDisplay = true }
         syncCaretBlink()
     }
@@ -195,11 +304,24 @@ final class EditorTextView: NSTextView {
 
         needsDisplay = true
         syncCaretBlink()
+        onColumnSelectionChange?()
     }
 
     /// ⌘クリックでキャレットを足す／同じ位置をもう一度クリックで外す。
     /// ⌥ドラッグの矩形選択（AppKit 標準）はそのまま残す＝そちらも複数範囲として編集できる。
     override func mouseDown(with event: NSEvent) {
+        if compositionSelections != nil { unmarkText() }
+        if columnModeEnabled, isEditable, !event.modifierFlags.contains(.command), let window {
+            window.makeFirstResponder(self)
+            let anchor = convert(event.locationInWindow, from: nil)
+            selectRectangle(from: anchor, to: anchor)
+            while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+                if next.type == .leftMouseDragged { _ = autoscroll(with: next) }
+                selectRectangle(from: anchor, to: convert(next.locationInWindow, from: nil))
+                if next.type == .leftMouseUp { break }
+            }
+            return
+        }
         guard event.modifierFlags.contains(.command),
               !event.modifierFlags.contains(.shift), isEditable else {
             super.mouseDown(with: event); return
@@ -235,15 +357,58 @@ final class EditorTextView: NSTextView {
 
     /// Esc でマルチカーソルを解除（主キャレット 1 つに畳む）。単一なら標準の動作へ。
     override func cancelOperation(_ sender: Any?) {
+        if hasMarkedText() { compositionSelections = nil; super.cancelOperation(sender); return }
+        if columnModeEnabled { setColumnMode(false); return }
         guard hasMultipleCarets else { super.cancelOperation(sender); return }
         applyCarets([carets.last ?? selectedRange()])
     }
 
     // MARK: - 複数キャレットへの編集（アンドゥは NSTextView の機構にそのまま載せる）
 
+    private struct CompositionSelections {
+        let ranges: [NSRange]
+        let primary: NSRange
+        let documentLength: Int
+        var text: String
+    }
+    private var compositionSelections: CompositionSelections?
+
+    override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        let value = (string as? NSAttributedString)?.string ?? (string as? String) ?? ""
+        if compositionSelections == nil && hasMultipleCarets && isEditable {
+            compositionSelections = CompositionSelections(ranges: carets, primary: self.selectedRange(),
+                documentLength: (self.string as NSString).length, text: value)
+        }
+        compositionSelections?.text = value
+        super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+    }
+    override func unmarkText() {
+        let pending = compositionSelections; compositionSelections = nil
+        super.unmarkText()
+        if let pending { finishComposition(pending, text: pending.text) }
+    }
+    private func finishComposition(_ pending: CompositionSelections, text: String) {
+        guard isEditable, let storage = textStorage else { return }
+        let delta = storage.length - pending.documentLength
+        let others = pending.ranges.filter { $0 != pending.primary }.map { range in
+            NSRange(location: range.location + (range.location >= NSMaxRange(pending.primary) ? delta : 0), length: range.length)
+        }
+        let primaryEnd = pending.primary.location + (text as NSString).length
+        let shift = others.filter { $0.location < primaryEnd }.reduce(0) { $0 + (text as NSString).length - $1.length }
+        if replaceRanges(others, with: Array(repeating: text, count: others.count), storage: storage) {
+            applyCarets(activeRanges + [NSRange(location: primaryEnd + shift, length: 0)])
+        }
+    }
+
     override func insertText(_ string: Any, replacementRange: NSRange) {
         let text = (string as? NSAttributedString)?.string ?? (string as? String) ?? ""
-        // IME 変換中は主キャレットだけを相手にする（marked text は 1 か所にしか置けない）。
+        if let pending = compositionSelections {
+            compositionSelections = nil
+            super.insertText(string, replacementRange: replacementRange)
+            finishComposition(pending, text: text)
+            return
+        }
+        // Let AppKit own the candidate window; mirror committed text to other selections.
         guard !hasMarkedText(), applyToAllCarets(replacing: nil, with: text) else {
             super.insertText(string, replacementRange: replacementRange); return
         }
@@ -258,7 +423,7 @@ final class EditorTextView: NSTextView {
     var onFieldTab: ((_ backwards: Bool) -> Bool)?
 
     override func insertTab(_ sender: Any?) {
-        if onFieldTab?(false) == true { return }
+        if !hasMultipleCarets && !columnModeEnabled, onFieldTab?(false) == true { return }
         guard applyToAllCarets(replacing: nil, with: "\t") else { super.insertTab(sender); return }
     }
 
@@ -290,21 +455,62 @@ final class EditorTextView: NSTextView {
         guard hasMultipleCarets, isEditable, let storage = textStorage else { return false }
         let targets: [NSRange] = {
             guard let forward else { return MultiCursor.normalize(carets) }
+            if columnModeEnabled {
+                let source = string as NSString
+                return carets.map { range in
+                    guard range.length == 0 else { return range }
+                    let position = forward ? range.location : range.location - 1
+                    guard position >= 0, position < source.length, !isNewline(source.character(at: position)) else { return range }
+                    return source.rangeOfComposedCharacterSequence(at: position)
+                }
+            }
             return MultiCursor.deletionRanges(carets, forward: forward, in: string as NSString)
         }()
-        guard !targets.isEmpty else { return true }   // 消すものが無い＝何もせず握り潰す
+        guard !targets.isEmpty else { return true }
+        replaceRanges(targets, with: Array(repeating: text, count: targets.count), storage: storage)
+        return true
+    }
 
-        let replacements = Array(repeating: text, count: targets.count)
-        guard shouldChangeText(inRanges: targets.map { NSValue(range: $0) },
-                               replacementStrings: replacements) else { return true }
-        let inserted = NSAttributedString(string: text, attributes: typingAttributes)
+    @discardableResult private func replaceRanges(_ targets: [NSRange], with replacements: [String], storage: NSTextStorage) -> Bool {
+        guard targets.count == replacements.count,
+              targets.allSatisfy({ $0.location >= 0 && NSMaxRange($0) <= storage.length }),
+              shouldChangeText(inRanges: targets.map { NSValue(range: $0) }, replacementStrings: replacements) else { return false }
         storage.beginEditing()
-        // 後ろから適用すれば前方のオフセットが動かない。
-        for r in targets.reversed() { storage.replaceCharacters(in: r, with: inserted) }
+        for i in targets.indices.reversed() {
+            storage.replaceCharacters(in: targets[i], with: NSAttributedString(string: replacements[i], attributes: typingAttributes))
+        }
         storage.endEditing()
         didChangeText()
+        rectangleAnchor = nil; rectangleFocus = nil
         applyCarets(MultiCursor.caretsAfterReplacing(targets, with: replacements))
         return true
+    }
+
+    override func copy(_ sender: Any?) {
+        guard hasMultipleCarets else { super.copy(sender); return }
+        let source = string as NSString
+        guard carets.contains(where: { $0.length > 0 }) else { return }
+        let text = carets.map { source.substring(with: $0) }.joined(separator: "\n")
+        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
+    }
+    override func cut(_ sender: Any?) {
+        guard hasMultipleCarets else { super.cut(sender); return }
+        guard isEditable else { return }
+        copy(sender)
+        _ = applyToAllCarets(replacing: nil, with: "")
+    }
+    override func paste(_ sender: Any?) {
+        guard hasMultipleCarets else { super.paste(sender); return }
+        guard isEditable, let text = NSPasteboard.general.string(forType: .string), let storage = textStorage else { return }
+        let normalized = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        var lines = normalized.components(separatedBy: "\n")
+        if lines.count == carets.count + 1 && lines.last == "" { lines.removeLast() }
+        if lines.count == 1 { _ = applyToAllCarets(replacing: nil, with: text); return }
+        guard lines.count == carets.count else {
+            let alert = NSAlert(); alert.messageText = L("column.pasteMismatch", lines.count, carets.count)
+            alert.informativeText = L("column.pasteHint"); alert.runModal(); return
+        }
+        replaceRanges(carets, with: lines, storage: storage)
     }
 
     // MARK: - 副キャレットの描画（点滅も自前）

@@ -77,6 +77,7 @@ final class PieceTableViewer: NSView, DocumentPane {
 
     var onStateChange: ((ViewerState) -> Void)?
     var onSearchState: ((Int, Int, Bool, Int, Bool, Bool) -> Void)?
+    var onSearchResults: (([(Int, String)], Bool) -> Void)?
     var onDropFiles: (([URL]) -> Void)?
 
     // MARK: - 編集・保存状態（B3）
@@ -89,6 +90,7 @@ final class PieceTableViewer: NSView, DocumentPane {
     private var saveToken: CancelToken?
     /// 未保存状態の変化通知（タイトルバーの編集済みドット用）。
     var onDirtyChange: ((Bool) -> Void)?
+    private(set) var contentRevision = 0
     /// piece table バックのペインは編集ペイン（索引構築中は入力が無効なだけ）。
     var canEdit: Bool { true }
     /// 挿入時に検出エンコードで表現できずに UTF-8 へフォールバックしたか（保存時に一度警告）。
@@ -736,14 +738,14 @@ final class PieceTableViewer: NSView, DocumentPane {
         }
         // ANSI カラー: 閲覧状態（clean）でのみ、SGR エスケープを色に変換して表示する。
         // エスケープを含む行だけ本経路に入り、除去後テキスト（plain）を基準に検索ハイライトを重ねる。
-        if EditorTheme.ansiColorsEnabled, readsFromOriginal,
+        if EditorTheme.ansiColorsEnabled, readsFromOriginal, searchSelectionBytes == nil,
            let (colored, plain) = ANSIColor.attributed(str, base: documentView.textAttributes, palette: ansiPalette) {
             let attr = NSMutableAttributedString(attributedString: colored)
             if !searchTerms.isEmpty || searchRegex != nil { highlightMatches(in: attr, text: plain) }
             return attr
         }
         let attr = NSMutableAttributedString(string: str, attributes: documentView.textAttributes)
-        if !searchTerms.isEmpty || searchRegex != nil { highlightMatches(in: attr, text: str) }
+        if !searchTerms.isEmpty || searchRegex != nil { highlightMatches(in: attr, text: str, lineStart: range.lowerBound) }
         return attr
     }
 
@@ -753,8 +755,15 @@ final class PieceTableViewer: NSView, DocumentPane {
     }
 
     /// 行内の一致箇所に背景色を付ける（可視行のみ・グローバル索引不要）。
-    private func highlightMatches(in attr: NSMutableAttributedString, text: String) {
-        for r in matchRanges(in: text) { attr.addAttribute(.backgroundColor, value: matchHighlight, range: r) }
+    private func highlightMatches(in attr: NSMutableAttributedString, text: String, lineStart: Int? = nil) {
+        for r in matchRanges(in: text) {
+            if let lineStart, searchSelectionBytes != nil {
+                let start = byteOffset(lineStart: lineStart, lineString: text, utf16Index: r.location)
+                let end = byteOffset(lineStart: lineStart, lineString: text, utf16Index: NSMaxRange(r))
+                guard insideSearchScope(start..<end) else { continue }
+            }
+            attr.addAttribute(.backgroundColor, value: matchHighlight, range: r)
+        }
     }
 
     /// 行文字列内の一致（UTF-16 レンジ）を返す。ハイライトと置換で共有。
@@ -1092,10 +1101,22 @@ final class PieceTableViewer: NSView, DocumentPane {
     /// すべての変異の起点。`range` を `bytes` で置換し、キャレット／選択を更新、逆操作をアンドゥに積む。
     /// 逆操作もこの関数を通るため、アンドゥを実行すると自動的にリドゥ（さらにその逆）が積まれる。
     private func perform(replace range: Range<Int>, with bytes: [UInt8], newCaret: Int, newAnchor: Int) {
+        if let scope = searchSelectionBytes {
+            let delta = bytes.count - range.count
+            func mapped(_ value: Int, end: Bool) -> Int {
+                if value < range.lowerBound { return value }
+                if value > range.upperBound { return value + delta }
+                return end ? range.lowerBound + bytes.count : range.lowerBound
+            }
+            let lo = mapped(scope.lowerBound, end: false), hi = mapped(scope.upperBound, end: true)
+            searchSelectionBytes = max(0, lo)..<max(max(0, lo), hi)
+        }
+
         guard let pt = pieceTable, !isSaving else { return }   // 保存中は変異させない（背景で全文を読んでいる）
         let lo = max(0, range.lowerBound), hi = min(pt.byteCount, range.upperBound)
         guard lo <= hi, !(lo == hi && bytes.isEmpty) else { return }
 
+        contentRevision &+= 1
         let prevCaret = caretByte, prevAnchor = selectionAnchor
         // 巨大編集はアンドゥ用の退避でメモリを食うため、閾値超過は履歴を破棄して非可逆に。
         let undoable = (hi - lo) <= maxUndoBytes && bytes.count <= maxUndoBytes
@@ -1513,6 +1534,37 @@ final class PieceTableViewer: NSView, DocumentPane {
 
     // MARK: - 検索（B4・クリーン時のみ有効。SearchEngine で mmap を走査）
 
+    private var searchSelectionBytes: Range<Int>?
+    @discardableResult func useSelectionSearch(_ enabled: Bool) -> Bool {
+        if enabled {
+            guard readsFromOriginal, !filterMode, let range = selectionRange else { return false }
+            searchSelectionBytes = range
+        } else { searchSelectionBytes = nil }
+        if readsFromOriginal { rebuildSearch() }
+        return true
+    }
+    private func insideSearchScope(_ range: Range<Int>) -> Bool {
+        guard let scope = searchSelectionBytes else { return true }
+        return range.lowerBound >= scope.lowerBound && range.upperBound <= scope.upperBound
+    }
+    private func scopedSearchResult(_ result: SearchEngine.Result) -> SearchEngine.Result {
+        guard let scope = searchSelectionBytes, let pt = pieceTable else { return result }
+        let first = pt.line(ofByteOffset: scope.lowerBound), last = pt.line(ofByteOffset: max(scope.lowerBound, scope.upperBound - 1))
+        var value = result
+        value.lines = result.lines.filter { line in
+            guard line >= first && line <= last else { return false }
+            if line > first && line < last { return true }
+            let cr = contentRange(ofLine: line), text = lineString(cr)
+            return matchRanges(in: text).contains { match in
+                let start = byteOffset(lineStart: cr.lowerBound, lineString: text, utf16Index: match.location)
+                let end = byteOffset(lineStart: cr.lowerBound, lineString: text, utf16Index: NSMaxRange(match))
+                return insideSearchScope(start..<end)
+            }
+        }
+        value.lineCount = value.lines.count
+        return value
+    }
+
     func setSearchQuery(_ q: String) { guard readsFromOriginal, q != searchQuery else { return }; searchQuery = q; rebuildSearch() }
     func setRegexMode(_ on: Bool) { guard readsFromOriginal, on != regexMode else { return }; regexMode = on; rebuildSearch() }
     func setCaseSensitive(_ on: Bool) { guard readsFromOriginal, on != caseSensitive else { return }; caseSensitive = on; rebuildSearch() }
@@ -1550,6 +1602,7 @@ final class PieceTableViewer: NSView, DocumentPane {
             emitSearchState(searching: false, progress: 0, invalid: true); return
         }
         let mode: SearchMode = regexMode ? .regex(searchRegex!) : .terms(searchTerms)
+        searchResults = .init()
         emitSearchState(searching: true, progress: 0, invalid: false)
         let work = DispatchWorkItem { [weak self] in self?.runSearch(mode, epoch: epoch) }
         searchDebounce = work
@@ -1563,12 +1616,12 @@ final class PieceTableViewer: NSView, DocumentPane {
         // 絞り込みは一致行を見せる側で、終わったかどうかを知らせる係はこちら。
         searchEngine?.search(mode, caseSensitive: caseSensitive, progress: { [weak self] res, p in
             guard let self, self.searchEpoch == epoch else { return }
-            self.searchResults = res
+            self.searchResults = self.scopedSearchResult(res)
             if self.filterMode { self.rebuildFilterDisplayLines(); self.refresh() }
             self.emitSearchState(searching: true, progress: Int(p * 100), invalid: false)
         }, completion: { [weak self] res in
             guard let self, self.searchEpoch == epoch else { return }
-            self.searchResults = res
+            self.searchResults = self.scopedSearchResult(res)
             if self.filterMode { self.rebuildFilterDisplayLines(); self.rebuildStructuredColumns(); self.refresh() }
             self.emitSearchState(searching: false, progress: 100, invalid: false)
         })
@@ -1788,6 +1841,17 @@ final class PieceTableViewer: NSView, DocumentPane {
                         progress: searchResults.isComplete ? 100 : 0, invalid: false)
     }
 
+    var searchResultsLeadingInset: CGFloat { documentView.gutterWidth }
+
+    func findAll() {
+        let limit = min(searchResults.lines.count, 500)
+        let rows = (0..<limit).map { line -> (Int, String) in
+            let index = searchResults.lines[line]
+            return (index, lineString(contentRange(ofLine: index)))
+        }
+        onSearchResults?(rows, searchResults.lineCount > limit || searchResults.capped)
+    }
+
     /// 編集で dirty になったら検索・追従・フィルタを止める（mmap と文書が乖離するため）。
     private func stopSearchAndFollowForEdit() {
         if followMode { setFollowMode(false) }
@@ -1814,7 +1878,7 @@ final class PieceTableViewer: NSView, DocumentPane {
             for (r, rep) in matchReplacements(in: str, with: replacement) {
                 let bs = byteOffset(lineStart: cr.lowerBound, lineString: str, utf16Index: r.location)
                 let be = byteOffset(lineStart: cr.lowerBound, lineString: str, utf16Index: r.location + r.length)
-                if bs < be { edits.append((bs..<be, encodeForInsertion(rep))) }
+                if bs < be && insideSearchScope(bs..<be) { edits.append((bs..<be, encodeForInsertion(rep))) }
             }
         }
         guard !edits.isEmpty else { NSSound.beep(); return }
@@ -1836,6 +1900,45 @@ final class PieceTableViewer: NSView, DocumentPane {
         scrollCaretIntoView()
         refresh()
         onSearchState?(count, count, false, 100, false, false)   // 「N 件置換」相当のフィードバック
+    }
+
+    func replacementPreview(_ replacement: String) -> ReplacementPreview? {
+        guard readsFromOriginal, supportsReplace, !isSaving, searchResults.isComplete else { return nil }
+        let revision = contentRevision
+        var appliedRevision: Int?
+        var edits: [(Range<Int>, [UInt8])] = []
+        var rows: [String] = []
+        var details: [ReplacementDetail] = []
+        outer: for line in searchResults.lines {
+            let cr = contentRange(ofLine: line), text = lineString(contentRange(ofLine: line))
+            for (range, value) in matchReplacements(in: text, with: replacement) {
+                let start = byteOffset(lineStart: cr.lowerBound, lineString: text, utf16Index: range.location)
+                let end = byteOffset(lineStart: cr.lowerBound, lineString: text, utf16Index: NSMaxRange(range))
+                guard start < end, insideSearchScope(start..<end) else { continue }
+                edits.append((start..<end, encodeForInsertion(value)))
+                details.append(ReplacementDetail(line: line + 1, source: text, range: range, replacement: value))
+                rows.append("\(line + 1)  ·  \((text as NSString).substring(with: range))  →  \(value.isEmpty ? "∅" : value)")
+                if rows.count == 500 { break outer }
+            }
+        }
+        return ReplacementPreview(rows: rows, details: details, limited: rows.count == 500 || searchResults.capped,
+            apply: { [weak self] selected in
+                guard let self, self.contentRevision == revision, !self.isSaving, self.supportsReplace else { return false }
+                let indices = selected.sorted(by: >).filter { edits.indices.contains($0) }
+                guard !indices.isEmpty else { return false }
+                self.undoMgr.beginUndoGrouping(); self.batchEditing = true
+                for i in indices {
+                    let (range, bytes) = edits[i]
+                    self.perform(replace: range, with: bytes, newCaret: range.lowerBound + bytes.count, newAnchor: range.lowerBound + bytes.count)
+                }
+                self.batchEditing = false; self.undoMgr.endUndoGrouping()
+                self.refresh()
+                appliedRevision = self.contentRevision
+                return true
+            }, undo: { [weak self] in self?.undoMgr.undo() }, canUndo: { [weak self] in
+                guard let self, let appliedRevision else { return false }
+                return self.contentRevision == appliedRevision && self.undoMgr.canUndo
+            })
     }
 
     /// 現在の選択が一致ならそれを置換して次へ、一致でなければ次の一致を選択する（反復置換）。
@@ -1869,6 +1972,7 @@ final class PieceTableViewer: NSView, DocumentPane {
 
     /// 選択テキストが検索パターンに一致すれば置換後文字列を返す（literal はそのまま/regex は $1 展開）。無一致は nil。
     private func replacementForSelection(_ sel: Range<Int>, _ replacement: String) -> String? {
+        guard insideSearchScope(sel) else { return nil }
         let str = decodeString(rawBytes(in: sel))
         let ns = str as NSString
         /// ケース維持がオンなら、選択（＝一致した実際の綴り）の書式を置換文字列へ移す。
@@ -1900,7 +2004,7 @@ final class PieceTableViewer: NSView, DocumentPane {
                 for r in matchRanges(in: str) {
                     let bs = byteOffset(lineStart: cr.lowerBound, lineString: str, utf16Index: r.location)
                     let be = byteOffset(lineStart: cr.lowerBound, lineString: str, utf16Index: r.location + r.length)
-                    if bs >= minByte && bs < be { return bs..<be }
+                    if bs >= minByte && bs < be && insideSearchScope(bs..<be) { return bs..<be }
                 }
             }
             return nil
@@ -1997,6 +2101,15 @@ final class PieceTableViewer: NSView, DocumentPane {
     func focusContent() { window?.makeFirstResponder(documentView) }
 
     /// 指定行（1 始まり）へスクロールする。
+    func inspectorDataProvider() -> ((_ cancelled: () -> Bool) throws -> Data)? {
+        isDirty ? pieceTable?.inspectorSnapshot() : nil
+    }
+    func revealSourceByteOffset(_ offset: Int) {
+        if filterMode { setFilterMode(false) }
+        caretByte = max(0, min(offset, docByteCount)); selectionAnchor = caretByte
+        caretGoalColumn = nil; showCaretNow(); scrollCaretIntoView(); refresh(); focusContent()
+    }
+
     func goToLine(_ line1Based: Int) {
         if filterMode { setFilterMode(false) }
         setTopLine(max(0, line1Based - 1))

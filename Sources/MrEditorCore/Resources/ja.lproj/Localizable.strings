@@ -260,6 +260,10 @@
 "search.replacePlaceholder" = "置換";
 "search.replace" = "置換";
 "search.replaceAll" = "すべて置換";
+"search.findAll" = "すべて検索";
+"search.results" = "検索結果";
+"search.resultRow" = "%1$d 行　%@";
+"search.resultsCapped" = "先頭 %d 件のみ表示";
 "search.recentSearches" = "最近の検索";
 "search.noRecentSearches" = "最近の検索はありません";
 "search.clearRecentSearches" = "最近の検索をクリア";
@@ -411,3 +415,230 @@
 "remote.following" = "末尾を追っています。";
 "remote.followEnded" = "追従が終わりました。";
 "remote.followStop" = "止める";
+
+/* Independent SSH connections */
+"ssh.quick" = "クイック接続";
+"ssh.saved" = "保存済み接続";
+"ssh.host" = "サーバー";
+"ssh.port" = "ポート";
+"ssh.user" = "ユーザー名";
+"ssh.auth" = "認証方式";
+"ssh.password" = "パスワード";
+"ssh.key" = "秘密鍵ファイル";
+"ssh.secret" = "パスワード／鍵のパスフレーズ";
+"ssh.choose" = "選択…";
+"ssh.path" = "ログのパス";
+"ssh.follow" = "開いた後に末尾を追従";
+"ssh.advanced" = "詳細設定";
+"ssh.jump" = "踏み台経由で接続";
+"ssh.remember" = "認証情報を macOS キーチェーンに保存";
+"ssh.name" = "接続名";
+"ssh.test" = "接続テスト";
+"ssh.connectOnce" = "保存せず接続";
+"ssh.saveConnect" = "保存して接続";
+"ssh.cancel" = "キャンセル";
+"ssh.saveChanges" = "変更を保存";
+"ssh.nameRequired" = "接続名を入力してください。";
+"ssh.empty" = "保存済み接続はありません。クイック接続で設定し、「保存して接続」を選んでください。";
+"ssh.credentialsSaved" = "認証情報はキーチェーンに保存済み";
+"ssh.credentialsAsk" = "接続時に認証情報を入力";
+"ssh.connect" = "接続";
+"ssh.edit" = "編集";
+"ssh.duplicate" = "複製";
+"ssh.delete" = "削除";
+"ssh.new" = "＋ 新規接続";
+"ssh.deleteTitle" = "「%@」を削除しますか？";
+"ssh.deleteHint" = "接続設定と保存済み認証情報を削除します。リモートのログファイルには影響しません。";
+"ssh.testSuccess" = "接続成功。認証とディレクトリへのアクセスを確認しました。";
+"ssh.connected" = "リモートログウィンドウで開きました。";
+"ssh.trustTitle" = "サーバーの指紋を確認";
+"ssh.rememberHost" = "このサーバーの識別情報を保存";
+"ssh.trust" = "信頼して続行";
+"ssh.credentialsTitle" = "接続の認証情報を入力";
+"ssh.invalidEndpoint" = "有効なサーバー、ユーザー名、ポート（1–65535）を入力してください。";
+"ssh.invalidKey" = "読み取り可能な秘密鍵ファイルを選択してください。パスに改行や % は使用できません。";
+"ssh.invalidPath" = "ログのパスは改行を含まない絶対パスにしてください。";
+"ssh.keychainError" = "キーチェーンの SSH 認証情報を更新できませんでした。保存は完了していません。";
+"ssh.fileMissing" = "ログファイルが存在しないか、通常のファイルではありません：%@";
+"ssh.passphrase" = "鍵のパスフレーズ";
+"ssh.disconnect" = "切断";
+
+/* Remote directory picker */
+"ssh.startDirectory" = "開始ディレクトリ";
+"ssh.directoryHint" = "接続後、このディレクトリから開くファイルを選択します。";
+"ssh.directoryInvalid" = "/ で始まるリモートディレクトリを入力してください。";
+"ssh.directoryResponse" = "完全なファイル一覧を読み取れません。ファイル名の文字コードやログイン時の出力を確認してください。";
+"ssh.directoryUnavailable" = "ディレクトリが存在しないかアクセス権がありません：%@";
+"ssh.parentDirectory" = "上へ";
+"ssh.goDirectory" = "移動";
+"ssh.refreshDirectory" = "更新";
+"ssh.openFile" = "ファイルを開く";
+"ssh.chooseRemoteFile" = "リモートファイルを選択";
+"ssh.serverConnected" = "接続済み · %@";
+"ssh.currentDirectory" = "現在のディレクトリ";
+"ssh.filenameFilter" = "ファイル名で絞り込み…";
+"ssh.sortNewest" = "更新日時：新しい順";
+"ssh.sortName" = "ファイル名：A → Z";
+"ssh.fileName" = "名前";
+"ssh.fileSize" = "サイズ";
+"ssh.fileModified" = "更新日時";
+"ssh.backConnection" = "戻る";
+"ssh.loadingDirectory" = "リモートディレクトリを読み取り中…";
+"ssh.enterDirectory" = "ディレクトリを開く";
+"ssh.compressedRemote" = "圧縮されたリモートファイルは現在開けません。";
+"ssh.unsupportedRemoteEntry" = "通常のファイルまたはディレクトリを選択してください。";
+"ssh.selectedFile" = "選択中：%@";
+"ssh.emptyDirectory" = "このディレクトリは空です。上へ移動するか別のディレクトリを指定してください。";
+"ssh.noMatchingFiles" = "一致するファイルはありません。検索条件を変更してください。";
+"ssh.selectFileHint" = "開くファイルを選択してください。フォルダーはダブルクリックで開けます。";
+"ssh.directoryLimited" = "ディレクトリが大きいため、先頭 %d 件のみ表示します。";
+"ssh.openingFile" = "ファイルを確認して開いています…";
+"ssh.chooseAnotherFile" = "別のファイルを選択…";
+
+"entry.local" = "ローカルファイルを開く";
+"entry.remote" = "リモートファイルを開く";
+
+"workspace.files" = "ファイル";
+"workspace.connections" = "接続";
+"workspace.opened" = "開いているファイル";
+"workspace.noConnections" = "保存した接続はありません";
+"workspace.manage" = "接続を管理…";
+"workspace.regex" = "正規表現";
+"workspace.case" = "大文字小文字";
+"workspace.context" = "前後の行";
+"workspace.live" = "リアルタイム";
+"workspace.readOnly" = "読み取り専用";
+"workspace.visibleLines" = "%d 行を表示";
+"workspace.welcome" = "ファイルから調査を始める";
+"workspace.welcomeHint" = "ローカルファイルを開くか、サーバーに接続してログを確認します。";
+"workspace.filterPlaceholder" = "ログを絞り込む…";
+"workspace.local" = "ローカル";
+"workspace.servers" = "サーバー";
+"workspace.newServer" = "＋ サーバーを追加";
+"workspace.openLocal" = "＋ ファイルを開く";
+"workspace.manageServers" = "サーバーを管理…";
+"workspace.expandServer" = "サーバーファイルを展開・折りたたむ";
+"workspace.connectionFailed" = "サーバーへの接続に失敗しました";
+
+"ssh.editServerTitle" = "サーバーを編集 · %@";
+
+"markdown.preview" = "プレビュー";
+"markdown.closePreview" = "プレビューを閉じる";
+"markdown.togglePreview" = "Markdown プレビュー";
+
+// Display mode menu
+"display.menu" = "表示形式";
+"display.raw" = "元のテキスト";
+"display.json" = "JSON";
+"display.ndjson" = "NDJSON";
+"display.csv" = "CSV";
+"display.tsv" = "TSV";
+"display.fixedWidth" = "固定幅表示";
+
+"search.preview" = "すべて置換をプレビュー";
+
+"search.applySelected" = "選択を適用";
+
+"search.undoReplacement" = "置換を取り消す";
+
+"search.selectAll" = "すべて選択";
+
+"search.selectNone" = "選択解除";
+
+"search.previewCount" = "%d / %d 件を選択";
+
+"search.previewLimit" = "最大500件。選択分のみ置換";
+
+"search.previewStale" = "文書が変更されました。再プレビューしてください。";
+
+"search.applied" = "%d 件を置換。未保存。";
+
+"search.undone" = "置換を取り消しました";
+
+"search.previewUnavailable" = "検索完了後、編集可能なソースで再実行してください。";
+
+"search.toggleReplace" = "置換の表示切替";
+"search.closePreview" = "閉じる";
+
+"search.findReplace" = "検索と置換";
+
+"search.currentFile" = "範囲：現在のファイル";
+
+"search.filterLines" = "一致行のみ";
+
+"search.collapse" = "閉じる";
+
+"search.resizeResults" = "ドラッグして検索結果の高さを変更";
+
+"search.deleteSummary" = "%d 件を削除・%d 行";
+
+"search.changeSummary" = "%d 件を変更・%d 行";
+
+"search.lineChanges" = "%d 行・%d 件";
+
+"search.expandMatches" = "一致を個別選択";
+
+"search.before" = "変更前";
+
+"search.after" = "変更後";
+
+"search.occurrence" = "%d 列";
+
+"search.deleteText" = "削除";
+
+"defaults.title" = "既定のアプリ";
+
+"defaults.hint" = "対象の種類を選択してください。同じ内容タイプの拡張子にも適用されます。macOS が確認を求める場合があります。";
+
+"defaults.apply" = "MrEditor に設定";
+
+"defaults.restore" = "選択を元に戻す";
+
+"defaults.refresh" = "更新";
+
+"defaults.none" = "未設定";
+
+"defaults.select" = "種類を選択してください。";
+
+"defaults.working" = "変更中…";
+
+"defaults.noBackup" = "元のアプリがありません";
+
+"defaults.unconfirmed" = "変更を確認できません";
+
+"defaults.done" = "%d 種類を更新。";
+
+// Search scope, comparison and default application management
+"scope.current" = "範囲：現在のファイル";
+"scope.selection" = "範囲：選択範囲";
+"scope.open" = "範囲：開いているすべてのファイル";
+"scope.selectFirst" = "編集可能な文書で検索範囲を選択してください。";
+"search.applyCount" = "選択した %d 件を置換";
+"defaults.customHint" = "拡張子（例：toml, cfg）";
+"defaults.add" = "追加";
+"defaults.restoreAll" = "元の関連付けをすべて復元";
+"defaults.documents" = "テキストと文書";
+"defaults.data" = "データと設定";
+"defaults.code" = "コードとスクリプト";
+"defaults.custom" = "カスタム拡張子";
+"defaults.invalidExtension" = "有効な拡張子をカンマで区切って入力してください。";
+"defaults.managed" = "✓ MrEditor で開く";
+"diff.pickDocuments" = "比較する文書を選択";
+"diff.left" = "左の文書";
+"diff.right" = "右の文書";
+"diff.chooseDifferent" = "異なる文書を選択してください。";
+"diff.previousAction" = "前の差分";
+"diff.nextAction" = "次の差分";
+"diff.copyLeft" = "左の差分をコピー";
+"diff.copyRight" = "右の差分をコピー";
+"diff.adoptAction" = "左 → 右";
+"diff.revertAction" = "この変更を戻す";
+"diff.saveAction" = "結果を別名で保存…";
+"search.undoStale" = "文書が変更されています。編集メニューで後の編集を先に取り消してください。";
+
+// Column editing
+"menu.columnMode" = "列モード（矩形選択）";
+"column.hint" = "ドラッグで矩形選択して複数行を編集。短い行は行末まで。Esc で終了。";
+"column.status" = "列モード · %d 行 · Esc で終了";
+"column.pasteMismatch" = "貼り付けは %d 行、選択は %d 行です";
+"column.pasteHint" = "1 行はすべての選択に挿入。複数行は選択数と一致する必要があります。";

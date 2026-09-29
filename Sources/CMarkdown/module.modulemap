@@ -1,0 +1,5 @@
+module CMarkdown [system] {
+    header "shim.h"
+    link "cmark-gfm"
+    export *
+}

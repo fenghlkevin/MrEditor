@@ -16,6 +16,8 @@ import AppKit
 /// 将来の Pro 機能はこの **既定オフ**（allowed に入れて default に入れない）で出す。
 /// 買っていない人の画面に押せないボタンを並べない、という線引きのため。
 extension NSToolbarItem.Identifier {
+    static let mrMarkdownPreview = NSToolbarItem.Identifier("mr.markdownPreview")
+    static let mrRemote = NSToolbarItem.Identifier("mr.remote")
     static let mrSidebar     = NSToolbarItem.Identifier("mr.sidebar")
     static let mrStructured  = NSToolbarItem.Identifier("mr.structured")
     static let mrFilter      = NSToolbarItem.Identifier("mr.filter")
@@ -58,12 +60,11 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate {
                           action: #selector(MainWindowController.toolbarToggleSidebar(_:)))
 
         case .mrStructured:
-            // 5 択（オフ + CSV/TSV/NDJSON/JSON）なので押しボタンにできない。
-            // メニュー付きにして、メニュー自体はメニューバー側と同じ意味の項目を持たせる。
+            // Display modes only; formatting belongs to the JSON inspector.
             let item = NSMenuToolbarItem(itemIdentifier: id)
-            item.label = L("menu.structured")
-            item.paletteLabel = L("menu.structured")
-            item.toolTip = L("menu.structured")
+            item.label = L("display.menu")
+            item.paletteLabel = L("display.menu")
+            item.toolTip = L("display.menu")
             item.image = NSImage(systemSymbolName: "tablecells", accessibilityDescription: nil)
             item.showsIndicator = true
             item.menu = structuredMenu()
@@ -122,18 +123,22 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate {
     private func structuredMenu() -> NSMenu {
         let menu = NSMenu()
         menu.delegate = controller
-        let off = NSMenuItem(title: L("menu.structured.off"),
+        let off = NSMenuItem(title: L("display.raw"),
                              action: #selector(MainWindowController.toolbarSetStructuredMode(_:)),
                              keyEquivalent: "")
         off.tag = -1
         off.target = controller
         menu.addItem(off)
         menu.addItem(.separator())
-        for (i, mode) in StructuredMode.allCases.enumerated() {
-            let item = NSMenuItem(title: L("menu.structured.\(mode.rawValue)"),
+        let markdown = NSMenuItem(title: "Markdown", action: #selector(MainWindowController.toolbarMarkdownPreview(_:)), keyEquivalent: "")
+        markdown.target = controller
+        menu.addItem(markdown)
+        for mode in [StructuredMode.json, .ndjson, .csv, .tsv, .fixedWidth] {
+            if mode == .csv { menu.addItem(.separator()) }
+            let item = NSMenuItem(title: L("display.\(mode.rawValue)"),
                                   action: #selector(MainWindowController.toolbarSetStructuredMode(_:)),
                                   keyEquivalent: "")
-            item.tag = i
+            item.tag = StructuredMode.allCases.firstIndex(of: mode)!
             item.target = controller
             menu.addItem(item)
         }

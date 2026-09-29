@@ -8,87 +8,158 @@ import AppKit
 /// contentView の最前面側に置く（StatusBar / SearchBar と同じ作り）。
 final class SidebarView: NSView {
     var onSelect: ((Int) -> Void)?
-    /// 行の × でそのドキュメントを閉じる要求。
     var onClose: ((Int) -> Void)?
-
+    var onConnection: ((SSHConnection) -> Void)?
+    var onNewConnection: (() -> Void)?
+    var onManageConnections: (() -> Void)?
+    var onEditConnection: ((SSHConnection) -> Void)?
+    var onOpenLocal: (() -> Void)?
+    var onSectionChange: ((Bool) -> Void)?
+    var onPreferences: (() -> Void)?
     private let stack = NSStackView()
+    private let tabs = NSSegmentedControl(labels: [L("workspace.local"), L("workspace.servers")], trackingMode: .selectOne, target: nil, action: nil)
+    private lazy var create = NSButton(title: "", target: self, action: #selector(createItem))
+    private lazy var secondary = NSButton(title: "", target: self, action: #selector(secondaryAction))
     private var rows: [SidebarRow] = []
-
-    override init(frame frameRect: NSRect) { super.init(frame: frameRect); setup() }
+    private var documents: [WorkspaceDocument] = []
+    private var groups: [WorkspaceServer] = []
+    private var active = -1
+    private var collapsed = Set<UUID>()
+    private var pending = Set<UUID>()
+    override init(frame: NSRect) { super.init(frame: frame); setup() }
     required init?(coder: NSCoder) { super.init(coder: coder); setup() }
-
     private func setup() {
         wantsLayer = true
-
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 2
-        stack.edgeInsets = NSEdgeInsets(top: 8, left: 6, bottom: 8, right: 6)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
+        tabs.selectedSegment = 0; tabs.target = self; tabs.action = #selector(changeTab)
+        let scroll = NSScrollView(); scroll.drawsBackground = false; scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
+        let document = SidebarFlippedView(); document.translatesAutoresizingMaskIntoConstraints = false
+        scroll.documentView = document
+        stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false; document.addSubview(stack)
+        for button in [create, secondary] { button.isBordered = false; button.alignment = .left; button.contentTintColor = .secondaryLabelColor }
+        let footer = NSStackView(views: [create, secondary]); footer.orientation = .vertical; footer.alignment = .leading; footer.spacing = 14
+        for view in [tabs, scroll, footer] { view.translatesAutoresizingMaskIntoConstraints = false; addSubview(view) }
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: topAnchor),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            tabs.topAnchor.constraint(equalTo: topAnchor, constant: 12), tabs.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12), tabs.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            scroll.topAnchor.constraint(equalTo: tabs.bottomAnchor, constant: 18), scroll.leadingAnchor.constraint(equalTo: leadingAnchor), scroll.trailingAnchor.constraint(equalTo: trailingAnchor), scroll.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -12),
+            footer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18), footer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12), footer.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -18),
+            document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+            stack.topAnchor.constraint(equalTo: document.topAnchor), stack.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: -12),
+            stack.leadingAnchor.constraint(equalTo: document.leadingAnchor, constant: 10), stack.trailingAnchor.constraint(equalTo: document.trailingAnchor, constant: -10)
         ])
-
-        // 右端の区切り線（サブレイヤ）
-        let sep = CALayer()
-        layer?.addSublayer(sep)
-        separator = sep
-        applyTheme()
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshConnections), name: .sshConnectionsChanged, object: nil)
+        refreshConnections(); applyTheme()
     }
-
-    private var separator: CALayer?
-    override func layout() {
-        super.layout()
-        separator?.frame = NSRect(x: bounds.width - 1, y: 0, width: 1, height: bounds.height)
+    private func add(_ view: NSView) {
+        stack.addArrangedSubview(view)
+        view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
     }
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        effectiveAppearance.performAsCurrentDrawingAppearance { applyTheme() }
+    private func heading(_ key: String) -> NSTextField {
+        let label = NSTextField(labelWithString: L(key)); label.font = .systemFont(ofSize: 11, weight: .semibold); label.textColor = .secondaryLabelColor
+        return label
     }
-
-    /// 配色（テーマ）を背景・区切り線・各行へ適用する。
+    @objc private func changeTab() { rebuild(); onSectionChange?(tabs.selectedSegment == 1) }
+    @objc private func createItem() { if tabs.selectedSegment == 1 { onNewConnection?() } else { onOpenLocal?() } }
+    @objc private func secondaryAction() { if tabs.selectedSegment == 1 { onManageConnections?() } else { onPreferences?() } }
+    @objc private func connect(_ sender: NSButton) {
+        guard groups.indices.contains(sender.tag) else { return }
+        let connection = groups[sender.tag].connection
+        guard !pending.contains(connection.id) else { return }
+        onConnection?(connection)
+    }
+    @objc private func disclosure(_ sender: NSButton) {
+        guard groups.indices.contains(sender.tag) else { return }
+        let id = groups[sender.tag].connection.id
+        if collapsed.contains(id) { collapsed.remove(id) } else { collapsed.insert(id) }
+        rebuild()
+    }
+    @objc private func edit(_ sender: NSButton) {
+        guard groups.indices.contains(sender.tag) else { return }
+        onEditConnection?(groups[sender.tag].connection)
+    }
+    func setConnecting(_ id: UUID, _ value: Bool) {
+        if value { pending.insert(id) } else { pending.remove(id) }
+        rebuild()
+    }
+    @objc func refreshConnections() { groups = WorkspaceNavigation.servers(saved: SSHConnectionStore().load(), documents: documents); rebuild() }
+    private func rebuild() {
+        stack.arrangedSubviews.forEach { stack.removeArrangedSubview($0); $0.removeFromSuperview() }
+        rows.removeAll()
+        let servers = tabs.selectedSegment == 1
+        create.title = L(servers ? "workspace.newServer" : "workspace.openLocal")
+        secondary.title = L(servers ? "workspace.manageServers" : "menu.preferences")
+        add(heading(servers ? "workspace.servers" : "workspace.opened"))
+        if !servers {
+            for document in WorkspaceNavigation.local(documents) { addDocument(document, indented: false) }
+        } else {
+            if groups.isEmpty { add(heading("workspace.noConnections")) }
+            for (index, group) in groups.enumerated() {
+                let connection = group.connection
+                let arrow = NSButton(image: NSImage(systemSymbolName: collapsed.contains(connection.id) ? "chevron.right" : "chevron.down", accessibilityDescription: L("workspace.expandServer"))!, target: self, action: #selector(disclosure(_:)))
+                arrow.isBordered = false; arrow.tag = index; arrow.widthAnchor.constraint(equalToConstant: 16).isActive = true
+                let button = NSButton(title: connection.name.isEmpty ? connection.endpoint.host : connection.name, target: self, action: #selector(connect(_:)))
+                button.image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: nil); button.imagePosition = .imageLeading
+                button.isBordered = false; button.alignment = .left; button.font = .systemFont(ofSize: 13, weight: .medium)
+                button.lineBreakMode = .byTruncatingTail; button.tag = index; button.isEnabled = !pending.contains(connection.id)
+                button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+                button.toolTip = connection.endpoint.host + ":" + connection.path
+                let more = NSButton(title: "…", target: self, action: #selector(edit(_:))); more.tag = index; more.bezelStyle = .rounded
+                more.toolTip = L("workspace.manageServers"); more.widthAnchor.constraint(equalToConstant: 28).isActive = true; more.isHidden = !group.saved
+                let header = NSStackView(views: [arrow, button, more]); header.spacing = 4
+                let detail = NSTextField(labelWithString: pending.contains(connection.id) ? L("remote.connecting", connection.endpoint.host) : connection.endpoint.user + "@" + connection.endpoint.host)
+                detail.font = .systemFont(ofSize: 11); detail.textColor = .secondaryLabelColor; detail.lineBreakMode = .byTruncatingMiddle
+                let row = NSStackView(views: [header, detail]); row.orientation = .vertical; row.alignment = .leading; row.spacing = 3
+                row.edgeInsets = NSEdgeInsets(top: 10, left: 4, bottom: 7, right: 4)
+                add(row)
+                header.widthAnchor.constraint(equalTo: row.widthAnchor, constant: -8).isActive = true
+                detail.widthAnchor.constraint(equalTo: header.widthAnchor).isActive = true
+                if !collapsed.contains(connection.id) {
+                    for document in group.documents { addDocument(document, indented: true) }
+                }
+            }
+        }
+    }
+    private func addDocument(_ document: WorkspaceDocument, indented: Bool) {
+        let row = SidebarRow(); row.index = document.index; row.label.stringValue = document.name
+        row.icon.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: nil)
+        row.onClick = { [weak self] in self?.onSelect?($0) }; row.onClose = { [weak self] in self?.onClose?($0) }
+        row.setActive(document.index == active); row.setDirty(document.dirty)
+        let container = NSView(); row.translatesAutoresizingMaskIntoConstraints = false; container.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: indented ? 18 : 0), row.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            row.topAnchor.constraint(equalTo: container.topAnchor), row.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
+        add(container); rows.append(row)
+    }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); applyTheme() }
     func applyTheme() {
         let theme = EditorTheme.current()
         layer?.backgroundColor = EditorTheme.withBackgroundOpacity(theme.chromeBackground).cgColor
-        separator?.backgroundColor = theme.separator.cgColor
         rows.forEach { $0.applyTheme(theme) }
     }
-
-    func reload(names: [String], dirty: [Bool], active: Int) {
-        rows.forEach { stack.removeArrangedSubview($0); $0.removeFromSuperview() }
-        rows.removeAll()
-        for (i, name) in names.enumerated() {
-            let row = SidebarRow()
-            row.index = i
-            row.label.stringValue = name
-            row.onClick = { [weak self] idx in self?.onSelect?(idx) }
-            row.onClose = { [weak self] idx in self?.onClose?(idx) }
-            row.setActive(i == active)
-            row.setDirty(i < dirty.count ? dirty[i] : false)
-            stack.addArrangedSubview(row)
-            row.leadingAnchor.constraint(equalTo: stack.leadingAnchor, constant: stack.edgeInsets.left).isActive = true
-            row.trailingAnchor.constraint(equalTo: stack.trailingAnchor, constant: -stack.edgeInsets.right).isActive = true
-            rows.append(row)
-        }
+    func reload(documents: [WorkspaceDocument], active: Int) {
+        self.documents = documents; self.active = active; refreshConnections()
     }
-
     func setActive(_ index: Int) {
-        for (i, r) in rows.enumerated() { r.setActive(i == index) }
+        active = index
+        if let document = documents.first(where: { $0.index == index }) {
+            tabs.selectedSegment = document.connection == nil ? 0 : 1
+            if let connection = document.connection { collapsed.remove(connection.id) }
+        }
+        rebuild()
     }
-
-    /// 指定行の未保存表示を更新する（編集/保存のたびに呼ぶ。行を作り直さない）。
     func setDirty(_ index: Int, _ dirty: Bool) {
-        guard index >= 0, index < rows.count else { return }
-        rows[index].setDirty(dirty)
+        documents = documents.map { $0.index == index ? WorkspaceDocument(index: $0.index, name: $0.name, dirty: dirty, connection: $0.connection) : $0 }
+        groups = WorkspaceNavigation.servers(saved: SSHConnectionStore().load(), documents: documents)
+        for row in rows where row.index == index { row.setDirty(dirty) }
     }
 }
+private final class SidebarFlippedView: NSView { override var isFlipped: Bool { true } }
 
 /// サイドバーの 1 行（layer 背景＋未保存ドット＋ラベル＋閉じるボタン）。
 final class SidebarRow: NSView {
     let label = NSTextField(labelWithString: "")
+    let icon = NSImageView()
     private let closeButton = NSButton()
     /// 未保存インジケータ（左端の小さな●。保存済みでは非表示）。
     private let dirtyDot = NSView()
@@ -100,7 +171,7 @@ final class SidebarRow: NSView {
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = 5
+        layer?.cornerRadius = 7
 
         dirtyDot.wantsLayer = true
         dirtyDot.layer?.cornerRadius = 3
@@ -108,8 +179,10 @@ final class SidebarRow: NSView {
         dirtyDot.translatesAutoresizingMaskIntoConstraints = false
         addSubview(dirtyDot)
 
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(icon)
         label.lineBreakMode = .byTruncatingMiddle
-        label.font = .systemFont(ofSize: 12)
+        label.font = .systemFont(ofSize: 13)
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
 
@@ -129,10 +202,13 @@ final class SidebarRow: NSView {
             dirtyDot.centerYAnchor.constraint(equalTo: centerYAnchor),
             dirtyDot.widthAnchor.constraint(equalToConstant: 6),
             dirtyDot.heightAnchor.constraint(equalToConstant: 6),
-            label.leadingAnchor.constraint(equalTo: dirtyDot.trailingAnchor, constant: 6),
+            icon.leadingAnchor.constraint(equalTo: dirtyDot.trailingAnchor, constant: 5),
+            icon.widthAnchor.constraint(equalToConstant: 16), icon.heightAnchor.constraint(equalToConstant: 16),
+            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
+            label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 8),
             label.trailingAnchor.constraint(equalTo: closeButton.leadingAnchor, constant: -6),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
-            heightAnchor.constraint(equalToConstant: 26),
+            heightAnchor.constraint(equalToConstant: 34),
             closeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -7),
             closeButton.centerYAnchor.constraint(equalTo: centerYAnchor),
             closeButton.widthAnchor.constraint(equalToConstant: 16),
@@ -166,15 +242,16 @@ final class SidebarRow: NSView {
     }
 
     private func restyle() {
-        layer?.backgroundColor = (isActive ? theme.chromeActiveBackground : .clear).cgColor
+        layer?.backgroundColor = (isActive ? NSColor.controlAccentColor.withAlphaComponent(0.12) : .clear).cgColor
         // 名前は可読性優先で通常色のまま。未保存は●と×をアクセント色にして色分けする。
-        label.textColor = isActive ? theme.chromeActiveText : theme.chromeText
+        label.textColor = isActive ? .controlAccentColor : theme.chromeText
+        icon.contentTintColor = label.textColor
         dirtyDot.isHidden = !isDirty
         dirtyDot.layer?.backgroundColor = theme.dirtyIndicator.cgColor
         closeButton.image = NSImage(
             systemSymbolName: isDirty ? "xmark.circle.fill" : "xmark.circle",
             accessibilityDescription: L("sidebar.close"))
         closeButton.contentTintColor = isDirty ? theme.dirtyIndicator
-                                               : (isActive ? theme.chromeActiveText : theme.chromeSecondaryText)
+                                               : (isActive ? .controlAccentColor : theme.chromeSecondaryText)
     }
 }

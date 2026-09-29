@@ -19,6 +19,11 @@ final class DropView: NSView {
 public final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let statusBar = StatusBarView()
     private let searchBar = SearchBarView()
+    private var searchHeaderHeight: NSLayoutConstraint?
+    private var searchResultsLeading: NSLayoutConstraint?
+    private let searchResultsGutter = SearchResultsGutter()
+    private var preferredResultsHeight: CGFloat = 240
+    private var replacementPreviewController: ReplacementPreviewController?
     private let aiResultPanel = AIResultPanel()
     /// AI パネルを載せるフローティングウィンドウ（初回表示時に生成）。
     private var aiPanelWindow: AIPanelWindow?
@@ -40,6 +45,8 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// 「読み込みました」の一時メッセージを消すタイマー。
     private var externalMessageTimer: Timer?
 
+    private var serverPickers: [UUID: RemoteFilePickerController] = [:]
+    private var statusHeight: NSLayoutConstraint?
     private let sidebar = SidebarView()
     private let viewerContainer = DropView()
 
@@ -73,7 +80,7 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
         (activeIndex >= 0 && activeIndex < viewers.count) ? viewers[activeIndex] : nil
     }
 
-    private let sidebarWidth: CGFloat = 200
+    private let sidebarWidth: CGFloat = 240
     /// サイドバーの幅。開閉は幅を 0 にして畳む（`isHidden` だと本文側の制約が浮く）。
     private var sidebarWidthConstraint: NSLayoutConstraint?
     /// ツールバーの delegate。窓が持つのは weak なので、こちらで保持しておく。
@@ -86,11 +93,12 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1040, height: 660),
+            contentRect: NSRect(x: 0, y: 0, width: 1200, height: 780),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
+        window.minSize = NSSize(width: 960, height: 600)
         window.title = AppInfo.name
         window.center()
         window.setFrameAutosaveName("MrEditorMainWindow")
@@ -129,10 +137,12 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
         sidebar.applyTheme()
         statusBar.applyTheme()
         searchBar.applyTheme()
+        searchResultsGutter.needsDisplay = true
         aiResultPanel.applyTheme()
     }
 
     /// 未保存変更でウィンドウを閉じる際の二重確認を抑止するフラグ。
+    private let emptyActions = NSStackView()
     private var forceClose = false
 
     private func setupContent() {
@@ -143,20 +153,56 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
         sidebar.translatesAutoresizingMaskIntoConstraints = false
         sidebar.onSelect = { [weak self] i in self?.activate(i) }
         sidebar.onClose = { [weak self] i in self?.closeDocument(at: i) }
+        sidebar.onConnection = { [weak self] connection in self?.openServer(connection) }
+        sidebar.onOpenLocal = { [weak self] in self?.openDocument(nil) }
+        sidebar.onSectionChange = { [weak self] remote in self?.selectSection(remote: remote) }
+        sidebar.onEditConnection = { connection in (NSApp.delegate as? AppDelegate)?.editRemoteConnection(connection) }
+        sidebar.onNewConnection = { (NSApp.delegate as? AppDelegate)?.showRemoteConnection(create: true) }
+        sidebar.onManageConnections = { (NSApp.delegate as? AppDelegate)?.showRemoteConnection() }
+        sidebar.onPreferences = { (NSApp.delegate as? AppDelegate)?.openPreferences(nil) }
+        let statusHeight = statusBar.heightAnchor.constraint(equalToConstant: StatusBarView.height)
+        self.statusHeight = statusHeight
 
         viewerContainer.translatesAutoresizingMaskIntoConstraints = false
         viewerContainer.onDropFiles = { [weak self] urls in urls.forEach { self?.open(url: $0) } }
         statusBar.translatesAutoresizingMaskIntoConstraints = false
 
         content.addSubview(viewerContainer)
+        let localOpen = NSButton(title: L("entry.local"), target: self, action: #selector(openDocument(_:)))
+        let remoteOpen = NSButton(title: L("entry.remote"), target: self, action: #selector(toolbarOpenRemote(_:)))
+        localOpen.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
+        remoteOpen.image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: nil)
+        for button in [localOpen, remoteOpen] {
+            button.bezelStyle = .rounded; button.imagePosition = .imageLeading
+        }
+        let welcome = NSTextField(labelWithString: L("workspace.welcome"))
+        welcome.font = .systemFont(ofSize: 25, weight: .semibold)
+        let hint = NSTextField(labelWithString: L("workspace.welcomeHint"))
+        hint.font = .systemFont(ofSize: 13); hint.textColor = .secondaryLabelColor
+        let actions = NSStackView(views: [localOpen, remoteOpen]); actions.spacing = 12
+        emptyActions.orientation = .vertical; emptyActions.alignment = .centerX
+        for view in [welcome, hint, actions] { emptyActions.addArrangedSubview(view) }
+        localOpen.toolTip = "⌘O"; remoteOpen.toolTip = "⌃⌘O"
+        emptyActions.spacing = 16
+        emptyActions.translatesAutoresizingMaskIntoConstraints = false
+        viewerContainer.addSubview(emptyActions)
+        NSLayoutConstraint.activate([
+            emptyActions.centerXAnchor.constraint(equalTo: viewerContainer.centerXAnchor),
+            emptyActions.centerYAnchor.constraint(equalTo: viewerContainer.centerYAnchor)
+        ])
         content.addSubview(statusBar)
         content.addSubview(sidebar)   // サイドバーを前面側に（合成不具合回避の試行）
 
         let sidebarWidthC = sidebar.widthAnchor.constraint(equalToConstant: sidebarWidth)
         sidebarWidthConstraint = sidebarWidthC
 
+        searchBar.translatesAutoresizingMaskIntoConstraints = false
+        searchBar.resultsArea.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(searchBar)
+        content.addSubview(searchBar.resultsArea)
+
         // 本文の下端。分析ペイン（Pro）を差すときだけ付け替える。
-        let viewerContainerBottom = viewerContainer.bottomAnchor.constraint(equalTo: statusBar.topAnchor)
+        let viewerContainerBottom = viewerContainer.bottomAnchor.constraint(equalTo: searchBar.resultsArea.topAnchor)
         self.viewerBottomConstraint = viewerContainerBottom
 
         NSLayoutConstraint.activate([
@@ -165,7 +211,7 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
             sidebar.bottomAnchor.constraint(equalTo: content.bottomAnchor),
             sidebarWidthC,
 
-            viewerContainer.topAnchor.constraint(equalTo: content.topAnchor),
+            viewerContainer.topAnchor.constraint(equalTo: searchBar.bottomAnchor),
             viewerContainer.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
             viewerContainer.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             viewerContainerBottom,
@@ -173,31 +219,71 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
             statusBar.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
             statusBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             statusBar.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            statusBar.heightAnchor.constraint(equalToConstant: StatusBarView.height),
+            statusHeight,
         ])
 
-        // 検索バー（本文領域の右上に浮かべる。初期は非表示）
         searchBar.translatesAutoresizingMaskIntoConstraints = false
-        searchBar.isHidden = true
-        content.addSubview(searchBar)
-        // 構造化バナーと同じ右上に浮くので、バナーが出ている間はその下へ逃がす。
-        // 1.11 で構造化中も検索できるようにした結果、両方が同時に出るようになった
-        // （それまでは構造化に切り替えると検索バーを閉じていたので重ならなかった）。
-        let searchTop = searchBar.topAnchor.constraint(equalTo: viewerContainer.topAnchor, constant: 10)
-        let searchTrailing = searchBar.trailingAnchor.constraint(equalTo: viewerContainer.trailingAnchor, constant: -28)
+        searchBar.isHidden = true; content.addSubview(searchBar)
+        let results = searchBar.resultsArea
+        results.translatesAutoresizingMaskIntoConstraints = false; content.addSubview(results)
+        let headerHeight = searchBar.heightAnchor.constraint(equalToConstant: 0)
+        searchHeaderHeight = headerHeight
+        let resultsHeight = results.heightAnchor.constraint(equalToConstant: 0)
+        searchBar.onHeightChange = { [weak self] height in headerHeight.constant = self?.searchBar.isHidden == false ? height : 0 }
+        let resultsLeading = results.leadingAnchor.constraint(equalTo: viewerContainer.leadingAnchor)
+        searchResultsLeading = resultsLeading
+        searchBar.onResultsHeightChange = { [weak self] height in
+            resultsHeight.constant = height > 0 ? self?.preferredResultsHeight ?? height : 0
+            resultsLeading.constant = self?.activeViewer?.searchResultsLeadingInset ?? 0
+        }
         NSLayoutConstraint.activate([
-            searchTop, searchTrailing,
-            // 「±N」の欄を足したぶん広げてある（440 のままだと「Aa」が「…」に潰れる）。
-            searchBar.widthAnchor.constraint(equalToConstant: 512),
-            searchBar.heightAnchor.constraint(equalToConstant: SearchBarView.height),
+            searchBar.topAnchor.constraint(equalTo: content.topAnchor),
+            searchBar.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            searchBar.trailingAnchor.constraint(equalTo: content.trailingAnchor), headerHeight,
+            resultsLeading,
+            results.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            results.bottomAnchor.constraint(equalTo: statusBar.topAnchor), resultsHeight,
         ])
-        searchOverlay = addDraggable("search", searchBar, horizontal: searchTrailing, .trailing, vertical: searchTop, .leading)
-        searchBar.onQueryChange = { [weak self] q in self?.activeViewer?.setSearchQuery(q) }
-        searchBar.onNext = { [weak self] in self?.activeViewer?.findNext() }
-        searchBar.onPrev = { [weak self] in self?.activeViewer?.findPrev() }
+        let divider = SearchResultsDivider()
+        divider.translatesAutoresizingMaskIntoConstraints = false
+        divider.toolTip = L("search.resizeResults")
+        results.addSubview(divider)
+        searchResultsGutter.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(searchResultsGutter)
+        NSLayoutConstraint.activate([
+            divider.topAnchor.constraint(equalTo: results.topAnchor),
+            divider.leadingAnchor.constraint(equalTo: results.leadingAnchor),
+            divider.trailingAnchor.constraint(equalTo: results.trailingAnchor),
+            divider.heightAnchor.constraint(equalToConstant: 7),
+            searchResultsGutter.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            searchResultsGutter.trailingAnchor.constraint(equalTo: results.leadingAnchor),
+            searchResultsGutter.topAnchor.constraint(equalTo: results.topAnchor),
+            searchResultsGutter.bottomAnchor.constraint(equalTo: results.bottomAnchor),
+        ])
+        divider.onDrag = { [weak self] delta in
+            guard let self else { return }
+            let available = self.viewerContainer.frame.height + resultsHeight.constant
+            let next = min(max(100, resultsHeight.constant + delta), max(100, available - 140))
+            self.preferredResultsHeight = next
+            resultsHeight.constant = next
+        }
+        searchBar.onScopeChange = { [weak self] scope in self?.changeSearchScope(scope) }
+        searchBar.onQueryChange = { [weak self] _ in self?.configureScopedSearch() }
+        searchBar.onNext = { [weak self] in self?.navigateSearch(forward: true) }
+        searchBar.onPrev = { [weak self] in self?.navigateSearch(forward: false) }
+        searchBar.onFindAll = { [weak self] in self?.findAllInScope() }
+        searchBar.onSelectResultIndex = { [weak self] row in self?.revealScopedResult(row) }
+        searchBar.onSelectPreviewDetail = { [weak self] detail in
+            guard let self else { return }
+            if !detail.documentID.isEmpty, let index = self.viewers.firstIndex(where: { self.searchID($0) == detail.documentID }) {
+                self.activate(index, preservingSearch: true)
+            }
+            self.activeViewer?.goToLine(detail.line)
+        }
+        searchBar.onSelectResult = { [weak self] line in self?.activeViewer?.goToLine(line) }
         searchBar.onClose = { [weak self] in self?.hideSearch() }
-        searchBar.onCaseToggle = { [weak self] on in self?.activeViewer?.setCaseSensitive(on) }
-        searchBar.onRegexToggle = { [weak self] on in self?.activeViewer?.setRegexMode(on) }
+        searchBar.onCaseToggle = { [weak self] _ in self?.configureScopedSearch() }
+        searchBar.onRegexToggle = { [weak self] _ in self?.configureScopedSearch() }
         searchBar.onFilterToggle = { [weak self] on in
             // 本人が押した ＝ これが以後の既定。次の ⌘F はこの状態で開く。
             AppSettings.searchFilterOn = on
@@ -210,8 +296,13 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         searchBar.onContextChange = { [weak self] n in self?.activeViewer?.setFilterContextLines(n) }
         searchBar.onReplace = { [weak self] r in self?.activeViewer?.replaceCurrent(with: r) }
-        searchBar.onReplaceAll = { [weak self] r in self?.activeViewer?.replaceAll(with: r) }
-        searchBar.onPreserveCaseToggle = { [weak self] on in self?.activeViewer?.setPreserveCase(on) }
+        searchBar.onDirectReplaceAll = { [weak self] text in
+            guard let self else { return }
+            if self.searchBar.scope == 2 { self.showScopedPreview(text) }
+            else { self.activeViewer?.replaceAll(with: text) }
+        }
+        searchBar.onReplaceAll = { [weak self] text in self?.showScopedPreview(text) }
+        searchBar.onPreserveCaseToggle = { [weak self] on in self?.searchTargets.forEach { $0.setPreserveCase(on) } }
 
         // AI パネルは独立したフローティングウィンドウ（アプリ外へも動かせる）。ここでは配線だけ。
         aiResultPanel.onClose = { [weak self] in self?.hideAIResult() }
@@ -407,10 +498,149 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
         return PieceTableViewer()
     }
 
+    private var inspectorRefresh: DispatchWorkItem?
+    private var inspectorRevision = 0
+    private var jsonInspector: JSONInspectorView?
+    private var recordInspector: RecordInspectorView?
+    private weak var jsonSourcePane: NSView?
+    private var jsonSourceTrailing: NSLayoutConstraint?
+    private var jsonSplitTrailing: NSLayoutConstraint?
+    private func closeJSONInspector() {
+        inspectorRefresh?.cancel(); inspectorRefresh = nil
+        jsonInspector?.cancel(); jsonInspector?.removeFromSuperview(); jsonInspector = nil
+        recordInspector?.cancel(); recordInspector?.removeFromSuperview(); recordInspector = nil
+        jsonSplitTrailing?.isActive = false; jsonSplitTrailing = nil
+        if jsonSourcePane?.superview === viewerContainer { jsonSourceTrailing?.isActive = true }
+        jsonSourceTrailing = nil; jsonSourcePane = nil
+    }
+    @objc func toolbarJSONFormat(_ sender: Any?) { presentJSONInspector(formatImmediately: true) }
+    private func presentJSONInspector(formatImmediately: Bool = false) {
+        guard let pane = activeViewer, !(pane is RemotePane) else { return }
+        closeJSONInspector()
+        pane.setStructuredMode(nil); pane.setFilterMode(false); updateStructuredBanner(); updateReadOnlyBanner()
+        let panel = JSONInspectorView(frame: .zero); panel.translatesAutoresizingMaskIntoConstraints = false
+        jsonInspector = panel
+        installInspector(panel, beside: pane)
+        panel.onClose = { [weak self] in self?.closeJSONInspector() }
+        panel.onRefresh = { [weak self] in self?.reloadInspector() }
+        panel.onFormatted = { [weak self] url in self?.open(url: url); self?.presentJSONInspector() }
+        inspectorRevision = pane.contentRevision
+        panel.onReveal = { [weak self, weak pane] offset in
+            guard let self, let pane, self.inspectorRevision == pane.contentRevision else { return }
+            pane.revealSourceByteOffset(offset)
+        }
+        panel.load(url: pane.fileURL, text: pane.restorableText, formatImmediately: formatImmediately, dataProvider: pane.inspectorDataProvider())
+    }
+
+    private func installInspector(_ panel: NSView, beside pane: NSView) {
+        viewerContainer.addSubview(panel)
+        jsonSourcePane = pane
+        jsonSourceTrailing = viewerContainer.constraints.first { $0.firstItem as? NSView === pane && $0.firstAttribute == .trailing && $0.secondItem as? NSView === viewerContainer }
+        jsonSourceTrailing?.isActive = false
+        jsonSplitTrailing = pane.trailingAnchor.constraint(equalTo: panel.leadingAnchor, constant: -1)
+        NSLayoutConstraint.activate([
+            panel.trailingAnchor.constraint(equalTo: viewerContainer.trailingAnchor), panel.topAnchor.constraint(equalTo: viewerContainer.topAnchor),
+            panel.bottomAnchor.constraint(equalTo: viewerContainer.bottomAnchor), panel.widthAnchor.constraint(equalTo: viewerContainer.widthAnchor, multiplier: 0.5), jsonSplitTrailing!
+        ])
+    }
+
+    private func presentRecordInspector(_ mode: StructuredMode) {
+        guard let pane = activeViewer, !(pane is RemotePane) else { return }
+        closeJSONInspector()
+        pane.setStructuredMode(nil); pane.setFilterMode(false); updateStructuredBanner(); updateReadOnlyBanner()
+        let panel = RecordInspectorView(mode: mode); panel.translatesAutoresizingMaskIntoConstraints = false
+        recordInspector = panel; installInspector(panel, beside: pane)
+        panel.onClose = { [weak self] in self?.closeJSONInspector() }
+        panel.onRefresh = { [weak self] in self?.reloadInspector() }
+        panel.onFormatted = { [weak self] url in self?.open(url: url); self?.presentJSONInspector() }
+        panel.onReveal = { [weak self, weak pane] offset in
+            guard let self, let pane, self.inspectorRevision == pane.contentRevision else { return }
+            pane.revealSourceByteOffset(offset)
+        }
+        reloadInspector()
+    }
+
+    private func reloadInspector() {
+        guard let pane = activeViewer, jsonSourcePane === pane else { return }
+        inspectorRefresh?.cancel(); inspectorRefresh = nil
+        inspectorRevision = pane.contentRevision
+        let text = pane.restorableText, provider = pane.inspectorDataProvider()
+        jsonInspector?.load(url: pane.fileURL, text: text, dataProvider: provider)
+        recordInspector?.load(url: pane.fileURL, text: text, dataProvider: provider)
+    }
+    private func updateInspectorForEdit(_ pane: DocumentPane) {
+        guard jsonSourcePane === pane, inspectorRevision != pane.contentRevision else { return }
+        inspectorRevision = pane.contentRevision
+        jsonInspector?.sourceDidChange(); recordInspector?.sourceDidChange()
+        inspectorRefresh?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.reloadInspector() }
+        inspectorRefresh = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+    }
+
+    private func updateWorkspaceChrome() {
+        if jsonSourcePane !== activeViewer { closeJSONInspector() }
+        let remote = activeViewer is RemotePane
+        statusBar.isHidden = remote
+        statusHeight?.constant = remote ? 0 : StatusBarView.height
+    }
+
+    func setServerConnecting(_ id: UUID, _ value: Bool) { sidebar.setConnecting(id, value) }
+
+    private func selectSection(remote: Bool) {
+        if let activeViewer, (activeViewer is RemotePane) == remote { return }
+        if let index = viewers.indices.last(where: { (viewers[$0] is RemotePane) == remote }) {
+            activate(index)
+        } else {
+            if !searchBar.isHidden { hideSearch() }
+            viewers.forEach { $0.isHidden = true }
+            activeIndex = -1; emptyActions.isHidden = false
+            window?.title = AppInfo.name
+            statusBar.setPlaceholder(); updateWorkspaceChrome(); updateEditedState()
+            updateReadOnlyBanner(); updateStructuredBanner(); updateExternalBanner()
+            sidebar.setActive(-1)
+        }
+    }
+
+    private func openServer(_ connection: SSHConnection) {
+        if let picker = serverPickers[connection.id] { picker.window?.makeKeyAndOrderFront(nil); return }
+        if let session = viewers.compactMap({ ($0 as? RemotePane)?.reader.currentSession }).first(where: {
+            $0.transport?.connection.id == connection.id && $0.transport?.connection.endpoint == connection.endpoint && $0.transport?.connection.jump == connection.jump
+        }) {
+            let picker = RemoteFilePickerController(session: session, path: connection.path, legacy: connection.pathKind == nil, follow: connection.follow)
+            serverPickers[connection.id] = picker
+            picker.onOpen = { [weak self] file, follow in self?.openRemoteSession(file, follow: follow) }
+            picker.onClose = { [weak self] in self?.serverPickers[connection.id] = nil }
+            picker.showWindow(nil); picker.window?.makeKeyAndOrderFront(nil); picker.start()
+        } else {
+            (NSApp.delegate as? AppDelegate)?.showRemoteConnection(connection)
+        }
+    }
+
+    func openRemoteSession(_ session: RemoteSession, follow: Bool) {
+        if let index = viewers.firstIndex(where: {
+            guard let existing = ($0 as? RemotePane)?.reader.currentSession else { return false }
+            return existing.transport === session.transport && existing.target.path == session.target.path
+        }) { activate(index); window?.makeKeyAndOrderFront(nil); return }
+        let pane = RemotePane(session: session, follow: follow)
+        pane.onTitleChange = { [weak self, weak pane] in
+            guard let self else { return }
+            self.reloadSidebar()
+            if let pane, self.activeViewer === pane { self.window?.title = pane.title + " — " + AppInfo.name }
+        }
+        pane.onClose = { [weak self, weak pane] in
+            guard let self, let pane else { return }; self.removePane(pane)
+        }
+        install(pane); viewers.append(pane); reloadSidebar(); activate(viewers.count - 1)
+        showWindow(nil); window?.makeKeyAndOrderFront(nil)
+    }
+
     private func reloadSidebar() {
-        sidebar.reload(names: viewers.map { displayName(of: $0) },
-                       dirty: viewers.map { $0.isDirty },
-                       active: activeIndex)
+        updateWorkspaceChrome()
+        sidebar.reload(documents: viewers.enumerated().map { index, pane in
+            WorkspaceDocument(index: index, name: displayName(of: pane), dirty: pane.isDirty,
+                              connection: (pane as? RemotePane)?.connection)
+        }, active: activeIndex)
         syncExternalWatch()   // 開いているファイルの増減・保存先の変更に監視を合わせる
     }
 
@@ -567,6 +797,7 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     /// サイドバー／タイトル用の表示名（未保存の新規ドキュメントは「名称未設定」）。
     private func displayName(of v: DocumentPane) -> String {
+        if let remote = v as? RemotePane { return remote.title }
         if let d = v as? DiffViewer { return d.displayTitle }   // diff は 1 ファイルに属さない
         return v.fileURL?.lastPathComponent ?? L("doc.untitled")
     }
@@ -642,7 +873,20 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
     func compareOpenDocuments() {
         let comparable = viewers.enumerated().filter { !($0.element is DiffViewer) }
         guard comparable.count >= 2 else { NSSound.beep(); return }
-        let pick = comparable.suffix(2).map { $0.element }
+        let chooser = NSAlert(); chooser.messageText = L("diff.pickDocuments")
+        let left = NSPopUpButton(), right = NSPopUpButton()
+        for (index, pane) in comparable { let title = "\(index + 1). \(displayName(of: pane))"; left.addItem(withTitle: title); right.addItem(withTitle: title) }
+        left.selectItem(at: comparable.firstIndex(where: { $0.element === activeViewer }) ?? 0)
+        right.selectItem(at: left.indexOfSelectedItem == 0 ? 1 : 0)
+        let controls = NSStackView(views: [NSTextField(labelWithString: L("diff.left")), left, NSTextField(labelWithString: L("diff.right")), right])
+        controls.orientation = .vertical; controls.alignment = .leading; controls.spacing = 8
+        controls.frame = NSRect(x: 0, y: 0, width: 420, height: 120); chooser.accessoryView = controls
+        chooser.addButton(withTitle: L("diff.compare")); chooser.addButton(withTitle: L("common.cancel"))
+        guard chooser.runModal() == .alertFirstButtonReturn else { return }
+        guard left.indexOfSelectedItem != right.indexOfSelectedItem else {
+            let alert = NSAlert(); alert.messageText = L("diff.chooseDifferent"); alert.runModal(); return
+        }
+        let pick = [comparable[left.indexOfSelectedItem].element, comparable[right.indexOfSelectedItem].element]
         // 未保存の本文はメインスレッドで先に取る（ペインの状態はメインでしか触れない）。
         let recipes = pick.map { diffRecipe(for: $0) }
         let title = "\(displayName(of: pick[0])) ↔ \(displayName(of: pick[1]))"
@@ -774,7 +1018,7 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// 構造化表示できるか（View メニューの有効化）。
     var canStructured: Bool { activeViewer?.supportsStructured ?? false }
     /// JSON 整形（単一ドキュメント字下げ）が現在のペインで使えるか。大ファイルは不可。
-    var canStructuredJson: Bool { activeViewer?.supportsJsonReformat ?? false }
+    var canStructuredJson: Bool { activeViewer != nil && !(activeViewer is RemotePane) }
     /// JSON その場クエリが現在のペインで使えるか。大ファイルは不可。
     var canJsonQuery: Bool { activeViewer?.supportsJsonQuery ?? false }
     var jsonQueryIsActive: Bool { activeViewer?.jsonQueryIsActive ?? false }
@@ -1083,6 +1327,8 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - マルチカーソル（小ファイルの編集ペインのみ）
 
     /// マルチカーソルのメニューを有効にしてよいか。
+    var columnModeEnabled: Bool { (activeViewer as? EditableViewer)?.columnModeEnabled ?? false }
+    func toggleColumnMode() { (activeViewer as? EditableViewer)?.toggleColumnMode() }
     var canMultiCursor: Bool { activeViewer?.supportsMultiCursor ?? false }
 
     /// 上／下の行の同じ桁にキャレットを足す（⌥⌘↑ / ⌥⌘↓）。
@@ -1168,11 +1414,15 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
     /// アクティブなドキュメントの構造化表示モード（メニューのチェック用）。
     var activeStructuredMode: StructuredMode? { activeViewer?.structuredMode }
+    var activeDisplayMode: StructuredMode? { recordInspector?.mode ?? (jsonInspector != nil ? .json : activeStructuredMode) }
     /// アクティブなドキュメントの構造化表示モードを設定する。
     ///
     /// 固定長だけは中身から列を割り出せない（区切り文字が無い）。**定義が無いまま選んだら
     /// その場で訊く**——「構造化モードだが列が未定義」という説明のつかない状態を作らない。
     func setActiveStructuredMode(_ mode: StructuredMode?) {
+        if mode == .json { presentJSONInspector(); return }
+        if let mode, [.csv, .tsv, .ndjson].contains(mode), !(activeViewer is RemotePane) { presentRecordInspector(mode); return }
+        closeJSONInspector()
         guard let v = activeViewer, v.supportsStructured else { NSSound.beep(); return }
         if mode == .fixedWidth, !ColumnGuides(v.columnGuideColumns).hasFieldBoundaries {
             editActiveColumnFields { [weak self] defined in
@@ -1214,11 +1464,29 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
         v.onStateChange = { [weak self, weak v] state in
             guard let self, self.activeViewer === v else { return }
             self.statusBar.update(state)
+            self.searchResultsLeading?.constant = v?.searchResultsLeadingInset ?? 0
+            if let v { self.updateInspectorForEdit(v) }
         }
         v.onSearchState = { [weak self, weak v] cur, tot, searching, prog, invalid, capped in
-            guard let self, self.activeViewer === v else { return }
+            guard let self, let v else { return }
+            self.scopedStates[self.searchID(v)] = (tot, searching, invalid, capped)
+            if self.searchBar.scope == 2 {
+                if !self.configuringSearch { self.publishScopedCount() }
+                return
+            }
+            guard self.activeViewer === v, !self.configuringSearch else { return }
             self.searchBar.setCount(current: cur, total: tot, searching: searching,
                                     progress: prog, invalid: invalid, capped: capped)
+        }
+        v.onSearchResults = { [weak self, weak v] rows, hasMore in
+            guard let self, let v else { return }
+            if self.searchBar.scope == 2 {
+                self.scopedRows[self.searchID(v)] = (rows, hasMore)
+                self.publishScopedRows()
+            } else if self.activeViewer === v {
+                self.resultLocations = rows.map { (v, $0.0 + 1) }
+                self.searchBar.setResults(rows, hasMore: hasMore)
+            }
         }
         v.onDropFiles = { [weak self] urls in urls.forEach { self?.open(url: $0) } }
         v.onDirtyChange = { [weak self, weak v] dirty in
@@ -1226,6 +1494,7 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
             // どのペインの未保存状態でもサイドバーの目印を更新する。
             if let idx = self.viewers.firstIndex(where: { $0 === v }) {
                 self.sidebar.setDirty(idx, dirty)
+                self.updateWorkspaceChrome()
             }
             // タイトルバーの編集済みドットはアクティブなペインのみ反映。
             if self.activeViewer === v { self.window?.isDocumentEdited = dirty }
@@ -1238,12 +1507,14 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// 指定インデックスのドキュメントをアクティブにする。
-    private func activate(_ index: Int) {
+    private func activate(_ index: Int, preservingSearch: Bool = false) {
         guard index >= 0, index < viewers.count else { return }
-        if !searchBar.isHidden { hideSearch() }   // 切替時は検索を閉じる
+        if !searchBar.isHidden && !preservingSearch { hideSearch() }   // 切替時は検索を閉じる
         // AI パネルは常駐（切替でも消さない）。別ドキュメントの選択をそのまま解析できる。
         for (i, v) in viewers.enumerated() { v.isHidden = (i != index) }
+        emptyActions.isHidden = true
         activeIndex = index
+        updateWorkspaceChrome()
         let v = viewers[index]
         v.ensureVisibleLayout()                    // 非表示中に差し込んだ本文を確実に描画
         v.reEmitState()                            // ステータスバーを現在の状態に更新
@@ -1263,7 +1534,7 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func updateReadOnlyBanner() {
         // 構造化表示による読み取り専用は専用バナーで案内するため除外する。
         // diff も除外する（「大きすぎて編集できません」は嘘。そもそも編集する画面ではない）。
-        guard let v = activeViewer, !v.canEdit, v.structuredMode == nil, !(v is DiffViewer) else {
+        guard let v = activeViewer, !v.canEdit, v.structuredMode == nil, !(v is DiffViewer), !(v is RemotePane) else {
             readOnlyBanner.isHidden = true
             return
         }
@@ -1333,8 +1604,10 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
         externallyChangedPanes.remove(ObjectIdentifier(pane))
         externalWatcher.forget(key: ObjectIdentifier(pane))
         let v = viewers.remove(at: idx)
+        (v as? RemotePane)?.shutdown()
         v.removeFromSuperview()
         if viewers.isEmpty {
+            emptyActions.isHidden = false
             activeIndex = -1
             reloadSidebar()
             window?.title = AppInfo.name
@@ -1579,7 +1852,13 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// 他のアプリで直してから戻ってきた、が一番多い動線なので、切り替わった瞬間に見に行く
     /// （タイマー待ちの 1 秒を挟まない）。
     public func windowDidBecomeKey(_ notification: Notification) {
+        sidebar.refreshConnections()
         externalWatcher.tick()
+    }
+
+    public func windowWillClose(_ notification: Notification) {
+        for picker in Array(serverPickers.values) { picker.close() }; serverPickers.removeAll()
+        for pane in viewers.compactMap({ $0 as? RemotePane }) { removePane(pane) }
     }
 
     /// ウィンドウを閉じる前に未保存のドキュメントを確認する。
@@ -1673,9 +1952,125 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    private var configuringSearch = false
+    private var lastSearchConfiguration: String?
+    private var scopedRows: [String: ([(Int, String)], Bool)] = [:]
+    private var scopedStates: [String: (Int, Bool, Bool, Bool)] = [:]
+    private var resultLocations: [(DocumentPane, Int)] = []
+    private var currentScopedResult = -1
+    private func searchID(_ pane: DocumentPane) -> String { String(describing: ObjectIdentifier(pane)) }
+    private var searchTargets: [DocumentPane] {
+        searchBar.scope == 2 ? viewers.filter { $0.supportsSearch } : activeViewer.map { [$0] } ?? []
+    }
+    private func changeSearchScope(_ scope: Int) {
+        lastSearchConfiguration = nil
+        configuringSearch = true
+        for pane in viewers { pane.useSelectionSearch(false) }
+        if scope == 1 {
+            activeViewer?.setFilterMode(false); searchBar.setFilterOn(false)
+            guard let pane = activeViewer, pane.useSelectionSearch(true) else {
+                searchBar.scopeSelector.selectItem(at: 0); configuringSearch = false
+                let alert = NSAlert(); alert.messageText = L("scope.selectFirst"); alert.runModal()
+                configureScopedSearch(); return
+            }
+        }
+        if scope != 0 { searchBar.setFilterOn(false); searchTargets.forEach { $0.setFilterMode(false) } }
+        configuringSearch = false
+        refreshSearchBarCapabilities()
+        configureScopedSearch()
+    }
+    private func configureScopedSearch() {
+        guard !configuringSearch else { return }
+        let configuration = "\(searchBar.scope)|\(searchBar.caseSensitive)|\(searchBar.regexMode)|\(searchBar.query)"
+        guard lastSearchConfiguration != configuration else { return }
+        lastSearchConfiguration = configuration
+        configuringSearch = true; scopedRows.removeAll(); resultLocations.removeAll(); currentScopedResult = -1
+        for pane in searchTargets {
+            pane.setCaseSensitive(searchBar.caseSensitive); pane.setRegexMode(searchBar.regexMode)
+            pane.setPreserveCase(searchBar.preserveCase); pane.setSearchQuery(searchBar.query)
+        }
+        configuringSearch = false
+        if searchBar.scope == 2 { publishScopedCount() }
+        else if let pane = activeViewer, let state = scopedStates[searchID(pane)] {
+            searchBar.setCount(current: 0, total: state.0, searching: state.1, progress: 0, invalid: state.2, capped: state.3)
+        }
+        findAllInScope()
+    }
+    private func findAllInScope() { for pane in searchTargets { pane.findAll() } }
+    private func publishScopedCount() {
+        let states = searchTargets.compactMap { scopedStates[searchID($0)] }
+        searchBar.setCount(current: 0, total: states.reduce(0) { $0 + $1.0 }, searching: states.contains { $0.1 },
+            progress: 0, invalid: states.contains { $0.2 }, capped: states.contains { $0.3 })
+    }
+    private func publishScopedRows() {
+        var rows: [(Int, String)] = []; var locations: [(DocumentPane, Int)] = []; var limited = false
+        for pane in searchTargets {
+            guard let (values, more) = scopedRows[searchID(pane)] else { continue }
+            limited = limited || more
+            for (line, text) in values {
+                if rows.count >= 500 { limited = true; break }
+                rows.append((line, displayName(of: pane) + " · " + text)); locations.append((pane, line + 1))
+            }
+        }
+        resultLocations = locations; searchBar.setResults(rows, hasMore: limited)
+    }
+    private func revealScopedResult(_ row: Int) {
+        guard resultLocations.indices.contains(row) else { return }
+        let (pane, line) = resultLocations[row]
+        guard let index = viewers.firstIndex(where: { $0 === pane }) else { return }
+        currentScopedResult = row; activate(index, preservingSearch: true); pane.goToLine(line)
+    }
+    private func navigateSearch(forward: Bool) {
+        guard searchBar.scope == 2 else { if forward { activeViewer?.findNext() } else { activeViewer?.findPrev() }; return }
+        guard !resultLocations.isEmpty else { return }
+        revealScopedResult((currentScopedResult + (forward ? 1 : -1) + resultLocations.count) % resultLocations.count)
+    }
+    private func showScopedPreview(_ replacement: String) {
+        let targets = searchTargets
+        if searchBar.scope != 2 {
+            guard let preview = activeViewer?.replacementPreview(replacement) else { showPreviewUnavailable(); return }
+            searchBar.showPreview(preview); return
+        }
+        // A batch is reviewable only when every searchable document can provide a stable preview.
+        var parts: [(DocumentPane, Int, ReplacementPreview)] = []
+        for pane in targets {
+            guard let preview = pane.replacementPreview(replacement) else { showPreviewUnavailable(); return }
+            parts.append((pane, pane.contentRevision, preview))
+        }
+        var details: [ReplacementDetail] = []; var rows: [String] = []; var offsets: [Int] = []
+        for (pane, _, preview) in parts {
+            offsets.append(rows.count); rows += preview.rows
+            details += preview.details.map { detail in
+                var value = detail; value.documentID = searchID(pane); value.documentName = displayName(of: pane); return value
+            }
+        }
+        var applied: [(DocumentPane, Int, ReplacementPreview)] = []
+        let combined = ReplacementPreview(rows: rows, details: details, limited: parts.contains { $0.2.limited }, apply: { selected in
+            guard parts.allSatisfy({ $0.0.contentRevision == $0.1 && $0.0.supportsReplace }) else { return false }
+            applied.removeAll()
+            for (index, part) in parts.enumerated() {
+                let local = Set(selected.compactMap { value -> Int? in
+                    let offset = value - offsets[index]; return part.2.rows.indices.contains(offset) ? offset : nil
+                })
+                guard !local.isEmpty else { continue }
+                if !part.2.apply(local) { for previous in applied.reversed() { previous.2.undo() }; applied.removeAll(); return false }
+                applied.append((part.0, part.0.contentRevision, part.2))
+            }
+            return !applied.isEmpty
+        }, undo: {
+            guard applied.allSatisfy({ $0.0.contentRevision == $0.1 }) else { NSSound.beep(); return }
+            for part in applied.reversed() { part.2.undo() }; applied.removeAll()
+        }, canUndo: { !applied.isEmpty && applied.allSatisfy { $0.0.contentRevision == $0.1 && $0.2.canUndo() } })
+        searchBar.showPreview(combined)
+    }
+    private func showPreviewUnavailable() {
+        let alert = NSAlert(); alert.messageText = L("search.previewUnavailable"); alert.runModal()
+    }
+
     func showSearch() {
         guard let v = activeViewer, v.supportsSearch else { NSSound.beep(); return }
         searchBar.isHidden = false
+        searchHeaderHeight?.constant = SearchBarView.height
         // 前に自分で漏斗を入れていたなら、その状態で開く。構造化されたものを読むとき
         // 主目的は「絞る」ほうで、そこへ毎回 1 手かけ直すのが B2 の詰まりだった。
         // **置換の可否を引き直すより先に当てる**── 順序が逆だと、フィルタ適用前の
@@ -1690,7 +2085,7 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// 覚えている「絞る意図」を、いまのペインに当てられる範囲で当てる。
     /// 当てられないペイン（構造化・JSON）では何もしない ── 意図は覚えたまま。
     private func applyRememberedFilter(to v: DocumentPane) {
-        guard AppSettings.searchFilterOn, v.supportsSearchFilter else { return }
+        guard searchBar.scope == 0, AppSettings.searchFilterOn, v.supportsSearchFilter else { return }
         searchBar.setFilterOn(true)
         v.setFilterMode(true)
     }
@@ -1700,7 +2095,7 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// 漏斗と置換の可否はその都度引き直す（開いた時の値を持ち回らない）。
     private func refreshSearchBarCapabilities() {
         guard let v = activeViewer else { return }
-        searchBar.setFilterAvailable(v.supportsSearchFilter)
+        searchBar.setFilterAvailable(searchBar.scope == 0 && v.supportsSearchFilter)
         searchBar.setReplaceAvailable(v.supportsReplace)
         searchBar.setContextLines(v.filterContextLines)
         // 漏斗が使えるペインへ戻ってきたら、覚えている意図をもう一度当てる。
@@ -1830,7 +2225,14 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func hideSearch() {
+        lastSearchConfiguration = nil
         searchBar.isHidden = true
+        for pane in searchTargets {
+            pane.useSelectionSearch(false)
+            pane.setSearchQuery("")
+        }
+        searchBar.scopeSelector.selectItem(at: 0)
+        scopedRows.removeAll(); scopedStates.removeAll(); resultLocations.removeAll()
         if let v = activeViewer {
             v.setFilterMode(false)
             v.setRegexMode(false)
@@ -1913,6 +2315,10 @@ extension MainWindowController: NSToolbarItemValidation, NSMenuDelegate {
         toolbar.displayMode = .iconOnly
         window?.toolbar = toolbar
         window?.toolbarStyle = .unified
+        // Remove the retired action from previously saved toolbar layouts as well.
+        for index in toolbar.items.indices.reversed() where [.mrRemote, .mrMarkdownPreview].contains(toolbar.items[index].itemIdentifier) {
+            toolbar.removeItem(at: index)
+        }
     }
 
     // MARK: 活性制御
@@ -1923,6 +2329,7 @@ extension MainWindowController: NSToolbarItemValidation, NSMenuDelegate {
 
     public func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
         switch item.itemIdentifier {
+        case .mrMarkdownPreview: return activeViewer?.supportsMarkdownPreview ?? false
         case .mrSidebar:    return true
         case .mrStructured: return canStructured
         case .mrFilter:
@@ -1944,10 +2351,15 @@ extension MainWindowController: NSToolbarItemValidation, NSMenuDelegate {
     /// JSON 整形は全文を持つ小ファイルのペインだけなので、そこだけ個別に落とす。
     public func menuNeedsUpdate(_ menu: NSMenu) {
         let modes = StructuredMode.allCases
-        let current = activeStructuredMode
+        let current = activeDisplayMode
+        let preview = activeViewer?.markdownPreviewVisible ?? false
+        for item in menu.items where item.action == #selector(toolbarMarkdownPreview(_:)) {
+            item.isEnabled = activeViewer?.supportsMarkdownPreview ?? false
+            item.state = preview ? .on : .off
+        }
         for item in menu.items where item.action == #selector(toolbarSetStructuredMode(_:)) {
             if item.tag < 0 {
-                item.state = (current == nil) ? .on : .off
+                item.state = (current == nil && !preview) ? .on : .off
                 item.isEnabled = canStructured
             } else if item.tag < modes.count {
                 let mode = modes[item.tag]
@@ -1960,6 +2372,12 @@ extension MainWindowController: NSToolbarItemValidation, NSMenuDelegate {
     // MARK: 動作
 
     /// サイドバーを畳む／戻す。幅を 0 にして畳む（`isHidden` だと本文側の制約が浮く）。
+    @objc func toolbarOpenRemote(_ sender: Any?) {
+        (NSApp.delegate as? AppDelegate)?.openRemote(sender)
+    }
+
+    @objc func toolbarMarkdownPreview(_ sender: Any?) { closeJSONInspector(); activeViewer?.setMarkdownPreviewVisible(true) }
+
     @objc func toolbarToggleSidebar(_ sender: Any?) {
         guard let c = sidebarWidthConstraint else { return }
         let collapsed = c.constant == 0

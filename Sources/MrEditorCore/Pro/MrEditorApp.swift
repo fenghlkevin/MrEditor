@@ -11,6 +11,7 @@ public enum MrEditorApp {
     private static var delegate: AppDelegate?
 
     public static func main(pro: ProProvider? = nil) {
+        SSHAskPass.runHelperIfNeeded()
         if let pro { Pro.install(pro) }
 
         let app = NSApplication.shared

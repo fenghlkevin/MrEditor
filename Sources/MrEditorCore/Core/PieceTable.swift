@@ -189,6 +189,33 @@ final class PieceTable {
         try writeNode(root, chunk: chunk, sink)
     }
 
+    /// Capture immutable piece descriptors and copy-on-write edits on the UI thread.
+    /// The returned reader can stream a consistent snapshot while editing continues.
+    func inspectorSnapshot() -> (_ cancelled: () -> Bool) throws -> Data {
+        var pieces: [Piece] = []
+        func collect(_ node: Node?) {
+            guard let node else { return }; collect(node.left); pieces.append(node.piece); collect(node.right)
+        }
+        collect(root)
+        let original = self.original, edits = add
+        return { cancelled in
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("mreditor-preview-" + UUID().uuidString)
+            FileManager.default.createFile(atPath: url.path, contents: nil)
+            defer { try? FileManager.default.removeItem(at: url) }
+            let file = try FileHandle(forWritingTo: url); defer { try? file.close() }
+            for piece in pieces {
+                var position = piece.start
+                while position < piece.start + piece.length {
+                    if cancelled() { throw CancellationError() }
+                    let end = min(position + 65536, piece.start + piece.length)
+                    let bytes = piece.source == .original ? original.read(position..<end) : Array(edits[position..<end])
+                    try file.write(contentsOf: Data(bytes)); position = end
+                }
+            }
+            return try Data(contentsOf: url, options: .alwaysMapped)
+        }
+    }
+
     private func writeNode(_ node: Node?, chunk: Int,
                            _ sink: (ArraySlice<UInt8>) throws -> Void) rethrows {
         guard let node = node else { return }

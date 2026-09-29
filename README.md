@@ -168,9 +168,17 @@ See [docs/ARCHITECTURE_v0.1.md](docs/ARCHITECTURE_v0.1.md) for the full design.
   over there too — **it does not leave processes running on your server.**
 - **⌘C copies the text only**, so it pastes into a local document, or into
   **Compare with Clipboard (⇧⌘D)** — filter remotely, compare locally.
-- Authentication is left to `/usr/bin/ssh`: `ssh_config`, ProxyJump, jump hosts and
-  ssh-agent all apply (**if your terminal can reach it, so can this**). No private key is stored.
-- **It is a separate surface from the local viewer.** Structured view, diff and bookmarks
+- **Quick Connect** accepts server, port, username, password or private key, and a starting directory directly.
+  Choose **Connect Without Saving** or **Save and Connect**. No system SSH configuration is required.
+- **Choose a remote file** after connecting: browse folders, filter filenames, sort by modification time
+  and refresh after log rotation. **Choose Another File** reuses the current connection.
+- **Saved Connections** supports connecting, editing, duplicating and deleting profiles. Credentials
+  are optionally stored in macOS Keychain; temporary credentials remain in memory.
+- **Advanced settings** supports an independently authenticated jump host. Explicit SSH Agent
+  authentication is also available. The first connection asks you to verify the actual server
+  fingerprint; changed host keys are rejected. See [SSH connections](docs/SSH_CONNECTIONS.md).
+- **Local and remote files have separate sidebar sections.** Servers group their open log files;
+  clicking a server goes directly to file selection. Remote readers include path, filtering, case/regex controls and live follow. Structured view, diff and bookmarks
   do not apply to remote files yet. It depends on commands on the far side
   (`head` / `wc` / `tail` / `grep`); if any are missing — BusyBox, say — **only that
   feature is folded away, and it tells you why.**
@@ -192,6 +200,13 @@ See [docs/ARCHITECTURE_v0.1.md](docs/ARCHITECTURE_v0.1.md) for the full design.
   and **merging is locked while it is on** — same shape means different contents, so pushing one across would erase them.
 - Diffing needs a 16-byte index per line — unlike viewing, that is real memory. Files too large for
   your machine are **refused with a reason**, never silently killed. Measured: 1 GB × 2 (8.7 M lines) in 5.4 s, 1.7 GB.
+
+**Local CSV / TSV / NDJSON inspector** — open files as raw text, then use the toolbar display menu.
+- CSV and TSV open a native table beside the source, with a first-record-as-header toggle, resizable/reorderable columns, record filtering, and selectable cell detail.
+- CSV quoted delimiters, escaped quotes, CRLF, and multiline fields stay within their records. Uneven rows remain visible; columns are paged in groups of 100.
+- NDJSON lists records; selecting one opens its expandable JSON tree. **Format All** exports every record as an indented JSON array in a new `.json` file; source NDJSON remains unchanged. Invalid records stop export with a record number; partial output is removed. A malformed record reports an error without preventing other records from opening. Empty lines are skipped.
+- Indexing and filtering run in the background; tables decode visible records on demand. Cell detail previews at most 1 MiB. File-backed large inputs use memory mapping and capture unsaved edits as background snapshots. Large-file byte indexing expects UTF-8; small files use the editor's decoded text.
+- Edits automatically update the right pane after a short debounce; selecting a JSON node or NDJSON record moves the source caret to the matching byte position. Formatting opens its new document with the JSON preview still visible. Return to Raw closes the inspector. No Pro subscription is needed.
 
 **Structured view (new in v0.6)** — read-only, toggled from View ▸ Structured View
 - **CSV / TSV** aligned into monospaced columns; **NDJSON** projected into columns by key.
@@ -435,3 +450,11 @@ automation and analysis tooling are out of scope (it's open-core — fork freely
 ---
 
 🇯🇵 日本語の README は **[README.ja.md](README.ja.md)** にあります。
+
+### Markdown preview
+
+Local `.md` and `.markdown` documents up to 8 MiB open with editable source on the left and live preview on the right. Drag the divider to resize, or choose Markdown Preview / Off in the display dropdown. Source and preview scroll in both directions using proportional document progress. Supports CommonMark, tables, task lists, strikethrough, fenced code, and relative images within the document directory. Rendering is offline; remote images and raw HTML are not loaded. Larger files retain the existing large-file editor.
+
+### JSON source, tree and formatting
+
+JSON files open as original text. Choose **JSON 视图** in the display menu for a collapsible tree beside the source; use **刷新** after editing the source. Containers show 500 children per page, and parsing happens in the background. **格式化 JSON（新文件）** creates a separate formatted copy; use Save As to keep it in a chosen folder. Keys, duplicate keys, and numeric spelling are preserved. Large UTF-8 JSON is memory-mapped and formatting streams to disk; tested with a document over 100 MB. Index memory scales with node count. Nesting is limited to 512 levels. Save pending edits to large files before parsing them.

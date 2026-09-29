@@ -16,6 +16,7 @@ public final class RemoteFollower {
     public var onEnd: (() -> Void)?
 
     private let target: RemoteFile.Target
+    private var transport: SSHTransport?
     private var process: Process?
     private var accumulator = LineAccumulator()
     private let lock = NSLock()
@@ -25,6 +26,11 @@ public final class RemoteFollower {
 
     public init(target: RemoteFile.Target) {
         self.target = target
+    }
+
+    init(session: RemoteSession) {
+        target = session.target
+        transport = session.transport
     }
 
     deinit { stop() }
@@ -47,9 +53,14 @@ public final class RemoteFollower {
             host: target.host,
             remoteCommand: RemoteFile.followCommand(target.path, bytes: fromBytes)
         )
+        transport?.configure(proc, command: RemoteFile.followCommand(target.path, bytes: fromBytes))
         let out = Pipe()
         proc.standardOutput = out
-        proc.standardError = Pipe()
+        let errors = Pipe()
+        proc.standardError = errors
+        errors.fileHandleForReading.readabilityHandler = { handle in
+            if handle.availableData.isEmpty { handle.readabilityHandler = nil }
+        }
         let input = Pipe()
         proc.standardInput = input
         self.stdin = input

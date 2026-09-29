@@ -15,7 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// 簡易クリップボード履歴（B6・無料コア）。永続化しない。メモリ `clipboard-history-corporate-angle`。
     private let clipboardHistory = ClipboardHistory()
     /// 開いた遠隔の面。持っておかないと即座に閉じる（NSWindowController は自分を保持しない）。
-    private var remoteWindows: [RemoteWindowController] = []
+    private var remoteWindows: [SSHConnectionWindowController] = []
+    private var directConnections: [UUID: SSHConnectionWindowController] = [:]
     private var preferencesController: PreferencesWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -72,7 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
         // App Store 配布ではないので、新版の存在は自分で知らせる必要がある。
         // 1 日 1 回まで・新版があるときだけ喋る（失敗は黙って捨てる）。
-        UpdateChecker.check(manual: false)
+
 
         // クリップボード履歴のポーリングを開始（常駐中は他アプリのコピーも拾う）。
         // 記録された瞬間に全メニューを更新し直す ── ツールバーの NSMenuToolbarItem は
@@ -156,10 +157,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 .paragraphStyle: paragraph,
             ]))
         return credits
-    }
-
-    @objc private func checkForUpdates(_ sender: Any?) {
-        UpdateChecker.check(manual: true)   // 明示的な呼び出しは結果を必ず知らせる
     }
 
     @objc private func newDocument(_ sender: Any?) {
@@ -311,6 +308,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     // マルチカーソル（キャレットを上下に足す／同じ語を次々に選ぶ）。
+    @objc private func toggleColumnMode(_ sender: Any?) { windowController?.toggleColumnMode() }
     @objc private func addCaretAbove(_ sender: Any?) { windowController?.addCaretToActive(above: true) }
     @objc private func addCaretBelow(_ sender: Any?) { windowController?.addCaretToActive(above: false) }
     @objc private func selectNextOccurrence(_ sender: Any?) { windowController?.selectNextOccurrenceInActive() }
@@ -336,10 +334,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// それを遠隔で作ると全体を引いてしまう（「落とさない」が意味を失う）。
     /// 遠隔で見たいのは末尾と絞り込みの結果だけなので、索引の要らない面を別に持つ。
     @objc func openRemote(_ sender: Any?) {
-        let controller = RemoteWindowController()
+        showRemoteConnection()
+    }
+
+    func showRemoteConnection(_ connection: SSHConnection? = nil, create: Bool = false) {
+        if let connection, directConnections[connection.id] != nil { return }
+        let controller = SSHConnectionWindowController()
+        controller.onOpenFile = { [weak self] session, follow in
+            self?.ensureController().openRemoteSession(session, follow: follow)
+        }
+        if let connection {
+            // Direct navigation never shows the configuration window.
+            controller.direct = true
+            directConnections[connection.id] = controller
+            controller.onBusy = { [weak self] busy in self?.windowController?.setServerConnecting(connection.id, busy) }
+            controller.onDirectFinished = { [weak self] in
+                self?.windowController?.setServerConnecting(connection.id, false)
+                self?.directConnections[connection.id] = nil
+            }
+            controller.startConnection(connection)
+        } else {
+            remoteWindows.append(controller)
+            controller.showWindow(nil); controller.window?.makeKeyAndOrderFront(nil)
+            if create { controller.showNewConnection() }
+        }
+    }
+
+    func editRemoteConnection(_ connection: SSHConnection) {
+        let controller = SSHConnectionWindowController(editingConnection: connection)
         remoteWindows.append(controller)
-        controller.showWindow(nil)
-        controller.window?.makeKeyAndOrderFront(nil)
+        controller.showWindow(nil); controller.window?.makeKeyAndOrderFront(nil)
     }
 
     /// File ＞ 最近使った項目／Edit ＞ クリップボード履歴、サブメニューを開くたびに再構築する。
@@ -514,7 +538,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             return c.activeDiffViewer?.canMerge ?? false
         case #selector(setStructuredMode(_:)):
             let modes = StructuredMode.allCases
-            let current = c.activeStructuredMode
+            let current = c.activeDisplayMode
             if item.tag < 0 { item.state = (current == nil) ? .on : .off }
             else if item.tag < modes.count { item.state = (current == modes[item.tag]) ? .on : .off }
             // JSON 整形は全文を保持する小ファイルペインのみ（大ファイルは項目を無効化）。
@@ -537,6 +561,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(applyTextTransform(_:)), #selector(filterThroughCommand(_:)),
              #selector(splitLines(_:)), #selector(numberLines(_:)):
             return c.canTransformText   // 編集可能なペインでのみ有効
+        case #selector(toggleColumnMode(_:)):
+            item.state = c.columnModeEnabled ? .on : .off
+            return c.canMultiCursor
         case #selector(addCaretAbove(_:)), #selector(addCaretBelow(_:)), #selector(selectNextOccurrence(_:)):
             return c.canMultiCursor     // マルチカーソルは小ファイルの編集ペインのみ
         case #selector(aiDiagnoseError(_:)):
@@ -562,14 +589,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                                    action: #selector(showAbout(_:)), keyEquivalent: "")
         aboutItem.target = self
         appMenu.addItem(aboutItem)
-        // 更新確認は、バンドルが配布の出どころを宣言している .app だけに出す
-        // （宣言の無い版で出すと、別製品のダウンロードを勧めることになる）。
-        if UpdateChecker.isAvailable {
-            let updateItem = NSMenuItem(title: L("menu.checkForUpdates"),
-                                        action: #selector(checkForUpdates(_:)), keyEquivalent: "")
-            updateItem.target = self
-            appMenu.addItem(updateItem)
-        }
         appMenu.addItem(.separator())
         let prefsItem = NSMenuItem(title: L("menu.preferences"),
                                    action: #selector(openPreferences(_:)), keyEquivalent: ",")
@@ -733,6 +752,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
         // マルチカーソル（小ファイルの編集ペインのみ。⌘クリックでも足せる）。
         editMenu.addItem(.separator())
+        let columnMode = NSMenuItem(title: L("menu.columnMode"), action: #selector(toggleColumnMode(_:)), keyEquivalent: "c")
+        columnMode.keyEquivalentModifierMask = [.command, .option, .shift]
+        columnMode.target = self; columnMode.toolTip = L("column.hint")
+        editMenu.addItem(columnMode)
         let caretAbove = NSMenuItem(title: L("menu.addCaretAbove"),
                                     action: #selector(addCaretAbove(_:)), keyEquivalent: "\u{F700}")
         caretAbove.keyEquivalentModifierMask = [.command, .option]
@@ -1021,7 +1044,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         NSWorkspace.shared.open(AppInfo.helpURL)
     }
 
-    @objc private func openPreferences(_ sender: Any?) {
+    @objc func openPreferences(_ sender: Any?) {
         if preferencesController == nil { preferencesController = PreferencesWindowController() }
         preferencesController?.show()
     }

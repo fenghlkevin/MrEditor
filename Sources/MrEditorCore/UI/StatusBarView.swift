@@ -126,6 +126,7 @@ final class StatusBarView: NSView {
             let pct = Int(state.indexProgress * 100)
             text += "    " + L("status.indexing", pct)
         }
+        if let count = state.columnSelectionCount { text += "    " + L("column.status", count) }
         label.stringValue = text
     }
 

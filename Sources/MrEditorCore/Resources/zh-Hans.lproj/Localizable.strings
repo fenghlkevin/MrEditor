@@ -252,6 +252,10 @@
 "search.replacePlaceholder" = "替换为";
 "search.replace" = "替换";
 "search.replaceAll" = "全部替换";
+"search.findAll" = "查找全部";
+"search.results" = "查找结果";
+"search.resultRow" = "第 %1$d 行　%@";
+"search.resultsCapped" = "仅显示前 %d 条结果";
 "search.recentSearches" = "最近搜索";
 "search.noRecentSearches" = "没有最近搜索";
 "search.clearRecentSearches" = "清除最近搜索";
@@ -401,3 +405,230 @@
 "remote.following" = "正在跟随文件末尾。";
 "remote.followEnded" = "跟随已结束。";
 "remote.followStop" = "停止";
+
+/* Independent SSH connections */
+"ssh.quick" = "快速连接";
+"ssh.saved" = "已保存连接";
+"ssh.host" = "服务器";
+"ssh.port" = "端口";
+"ssh.user" = "用户名";
+"ssh.auth" = "认证方式";
+"ssh.password" = "密码";
+"ssh.key" = "私钥文件";
+"ssh.secret" = "密码／私钥口令";
+"ssh.choose" = "选择…";
+"ssh.path" = "日志路径";
+"ssh.follow" = "打开后实时跟随";
+"ssh.advanced" = "高级设置";
+"ssh.jump" = "通过跳板机连接";
+"ssh.remember" = "记住凭据（存入 macOS 钥匙串）";
+"ssh.name" = "连接名称";
+"ssh.test" = "测试连接";
+"ssh.connectOnce" = "不保存，直接连接";
+"ssh.saveConnect" = "保存并连接";
+"ssh.cancel" = "取消";
+"ssh.saveChanges" = "保存修改";
+"ssh.nameRequired" = "请填写连接名称。";
+"ssh.empty" = "还没有保存的连接。填写快速连接配置后，选择“保存并连接”。";
+"ssh.credentialsSaved" = "凭据已保存到钥匙串";
+"ssh.credentialsAsk" = "连接时提供凭据";
+"ssh.connect" = "连接";
+"ssh.edit" = "编辑";
+"ssh.duplicate" = "复制";
+"ssh.delete" = "删除";
+"ssh.new" = "＋ 新建连接";
+"ssh.deleteTitle" = "删除“%@”？";
+"ssh.deleteHint" = "删除连接配置及其保存的凭据，远程日志文件不受影响。";
+"ssh.testSuccess" = "连接成功，认证通过且起始目录可访问。";
+"ssh.connected" = "已在远程日志窗口中打开。";
+"ssh.trustTitle" = "首次连接此服务器，请核对指纹";
+"ssh.rememberHost" = "记住此服务器身份";
+"ssh.trust" = "信任并继续";
+"ssh.credentialsTitle" = "输入连接凭据";
+"ssh.invalidEndpoint" = "请填写有效的服务器、用户名及端口（1–65535）。";
+"ssh.invalidKey" = "请选择可读取的私钥文件，路径不能包含换行或 %。";
+"ssh.invalidPath" = "日志路径必须是绝对路径，不能包含换行。";
+"ssh.keychainError" = "无法更新钥匙串中的 SSH 凭据，连接配置未完成保存。";
+"ssh.fileMissing" = "日志文件不存在或不是普通文件：%@";
+"ssh.passphrase" = "私钥口令（如有）";
+"ssh.disconnect" = "断开连接";
+
+/* Remote directory picker */
+"ssh.startDirectory" = "起始目录";
+"ssh.directoryHint" = "连接后列出此目录，由你选择本次要打开的文件。";
+"ssh.directoryInvalid" = "请输入以 / 开头的远程目录。";
+"ssh.directoryResponse" = "无法解析完整的远程文件列表。请检查服务器文件名编码或登录输出后重试。";
+"ssh.directoryUnavailable" = "目录不存在或没有访问权限：%@";
+"ssh.parentDirectory" = "上一级";
+"ssh.goDirectory" = "前往";
+"ssh.refreshDirectory" = "刷新";
+"ssh.openFile" = "打开文件";
+"ssh.chooseRemoteFile" = "选择远程文件";
+"ssh.serverConnected" = "已连接 · %@";
+"ssh.currentDirectory" = "当前目录";
+"ssh.filenameFilter" = "按文件名筛选…";
+"ssh.sortNewest" = "修改时间：最新在前";
+"ssh.sortName" = "文件名：A → Z";
+"ssh.fileName" = "名称";
+"ssh.fileSize" = "大小";
+"ssh.fileModified" = "修改时间";
+"ssh.backConnection" = "返回";
+"ssh.loadingDirectory" = "正在读取远程目录…";
+"ssh.enterDirectory" = "进入目录";
+"ssh.compressedRemote" = "此压缩文件暂不支持远程打开。";
+"ssh.unsupportedRemoteEntry" = "请选择普通文件或文件夹。";
+"ssh.selectedFile" = "已选择：%@";
+"ssh.emptyDirectory" = "此目录为空，可以返回上一级或修改目录。";
+"ssh.noMatchingFiles" = "没有匹配的文件，请修改筛选条件。";
+"ssh.selectFileHint" = "请选择文件后打开。双击文件夹可进入。";
+"ssh.directoryLimited" = "目录较大，仅显示前 %d 项。";
+"ssh.openingFile" = "正在检查并打开文件…";
+"ssh.chooseAnotherFile" = "选择其他文件…";
+
+"entry.local" = "打开本地文件";
+"entry.remote" = "打开远程文件";
+
+"workspace.files" = "文件";
+"workspace.connections" = "连接";
+"workspace.opened" = "已打开";
+"workspace.noConnections" = "尚未保存连接";
+"workspace.manage" = "管理连接…";
+"workspace.regex" = "正则";
+"workspace.case" = "区分大小写";
+"workspace.context" = "上下文";
+"workspace.live" = "实时跟随";
+"workspace.readOnly" = "只读";
+"workspace.visibleLines" = "显示 %d 行";
+"workspace.welcome" = "从一份文件，开始排查";
+"workspace.welcomeHint" = "打开本地文件，或连接服务器查看日志。";
+"workspace.filterPlaceholder" = "筛选日志内容…";
+"workspace.local" = "本地";
+"workspace.servers" = "服务器";
+"workspace.newServer" = "＋ 新建服务器";
+"workspace.openLocal" = "＋ 打开文件";
+"workspace.manageServers" = "管理服务器…";
+"workspace.expandServer" = "展开或收起服务器文件";
+"workspace.connectionFailed" = "服务器连接失败";
+
+"ssh.editServerTitle" = "编辑服务器 · %@";
+
+"markdown.preview" = "预览";
+"markdown.closePreview" = "关闭预览";
+"markdown.togglePreview" = "Markdown 预览";
+
+// Display mode menu
+"display.menu" = "显示方式";
+"display.raw" = "原始文本";
+"display.json" = "JSON";
+"display.ndjson" = "NDJSON";
+"display.csv" = "CSV";
+"display.tsv" = "TSV";
+"display.fixedWidth" = "定宽";
+
+"search.preview" = "预览修改…";
+
+"search.applySelected" = "应用选中替换";
+
+"search.undoReplacement" = "撤销替换";
+
+"search.selectAll" = "全选";
+
+"search.selectNone" = "取消全选";
+
+"search.previewCount" = "已选择 %d / %d 处匹配";
+
+"search.previewLimit" = "预览最多 500 项，仅替换选中项";
+
+"search.previewStale" = "文档已变化，请关闭后重新预览。";
+
+"search.applied" = "已替换 %d 处，尚未保存。";
+
+"search.undone" = "已撤销替换";
+
+"search.previewUnavailable" = "请等待搜索完成，并在可编辑的原文视图中预览。";
+
+"search.toggleReplace" = "显示 / 隐藏替换";
+"search.closePreview" = "关闭";
+
+"search.findReplace" = "查找与替换";
+
+"search.currentFile" = "范围：当前文件";
+
+"search.filterLines" = "仅匹配行";
+
+"search.collapse" = "收起";
+
+"search.resizeResults" = "上下拖动调整结果区高度";
+
+"search.deleteSummary" = "将删除 %d 处匹配内容，影响 %d 行";
+
+"search.changeSummary" = "将修改 %d 处匹配，影响 %d 行";
+
+"search.lineChanges" = "第 %d 行 · %d 处";
+
+"search.expandMatches" = "展开逐处选择";
+
+"search.before" = "修改前";
+
+"search.after" = "修改后";
+
+"search.occurrence" = "第 %d 列";
+
+"search.deleteText" = "删除";
+
+"defaults.title" = "默认打开程序";
+
+"defaults.hint" = "勾选要由 MrEditor 默认打开的文本类型。更改对同一内容类型的其他扩展名也生效，macOS 可能要求确认。";
+
+"defaults.apply" = "设为 MrEditor";
+
+"defaults.restore" = "恢复所选原程序";
+
+"defaults.refresh" = "刷新";
+
+"defaults.none" = "未设置";
+
+"defaults.select" = "请先勾选文件类型。";
+
+"defaults.working" = "正在应用…";
+
+"defaults.noBackup" = "无可恢复的原程序";
+
+"defaults.unconfirmed" = "系统尚未确认更改";
+
+"defaults.done" = "已更新 %d 种类型。";
+
+// Search scope, comparison and default application management
+"scope.current" = "范围：当前文件";
+"scope.selection" = "范围：选中文本";
+"scope.open" = "范围：所有已打开文件";
+"scope.selectFirst" = "请先在可编辑文本中选中需要查找的范围。";
+"search.applyCount" = "替换所选 %d 处";
+"defaults.customHint" = "扩展名，例如 toml、cfg（逗号分隔）";
+"defaults.add" = "添加";
+"defaults.restoreAll" = "恢复全部原关联";
+"defaults.documents" = "文本与文档";
+"defaults.data" = "数据与配置";
+"defaults.code" = "代码与脚本";
+"defaults.custom" = "自定义扩展名";
+"defaults.invalidExtension" = "请输入有效扩展名，多个扩展名用逗号分隔。";
+"defaults.managed" = "✓ 已由 MrEditor 打开";
+"diff.pickDocuments" = "选择要比较的两个已打开文件";
+"diff.left" = "左侧文件";
+"diff.right" = "右侧文件";
+"diff.chooseDifferent" = "请选择两个不同的文件。";
+"diff.previousAction" = "上一处差异";
+"diff.nextAction" = "下一处差异";
+"diff.copyLeft" = "复制左侧差异";
+"diff.copyRight" = "复制右侧差异";
+"diff.adoptAction" = "左 → 右";
+"diff.revertAction" = "撤回此处";
+"diff.saveAction" = "另存比较结果";
+"search.undoStale" = "正文已继续编辑，请使用编辑菜单逐步撤销。";
+
+// Column editing
+"menu.columnMode" = "列模式（矩形选择）";
+"column.hint" = "拖拽选择矩形区域，同时编辑多行。短行停在行尾；Esc 退出列模式。";
+"column.status" = "列模式 · %d 行 · Esc 退出";
+"column.pasteMismatch" = "粘贴内容有 %d 行，当前选择了 %d 行";
+"column.pasteHint" = "单行文本会插入每一行；多行文本的行数需与选中行数相同。";

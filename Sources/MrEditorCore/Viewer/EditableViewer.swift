@@ -5,10 +5,80 @@ import AppKit
 ///
 /// 大ファイルは `LargeFileViewer`（mmap + スパース索引・読み取り専用）が担う。
 /// 振り分けの閾値は `EditableViewer.sizeThreshold`。
-final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate {
+final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate, NSTextStorageDelegate {
     /// この閾値以下のファイルを編集ペインで開く（超過は読み取り専用ビューア）。
     static let sizeThreshold = 8 * 1024 * 1024
 
+    private var markdownPreview: MarkdownPreviewView?
+    private var markdownDivider: MarkdownDivider?
+    private var markdownConstraints: [NSLayoutConstraint] = []
+    private var markdownWidth: NSLayoutConstraint?
+    private var editorTrailing: NSLayoutConstraint!
+    private var previewEnabled = true
+    var supportsMarkdownPreview: Bool { ["md", "markdown"].contains(fileURL?.pathExtension.lowercased() ?? "") }
+    private var receivingPreviewScroll = false
+    var markdownPreviewVisible: Bool { supportsMarkdownPreview && previewEnabled }
+    func toggleMarkdownPreview() { setMarkdownPreviewVisible(!previewEnabled) }
+    func setMarkdownPreviewVisible(_ visible: Bool) {
+        if visible { setStructuredMode(nil) }
+        previewEnabled = visible
+        updateMarkdownPreview()
+        syncMarkdownScroll()
+    }
+    private func syncMarkdownScroll() {
+        guard markdownPreviewVisible, !receivingPreviewScroll else { return }
+        let clip = scrollView.contentView
+        let distance = max(1, textView.bounds.height - clip.bounds.height)
+        markdownPreview?.scroll(to: Double(max(0, min(1, clip.bounds.minY / distance))))
+    }
+
+    private func updateMarkdownPreview() {
+        let visible = supportsMarkdownPreview && previewEnabled
+        if visible && markdownPreview == nil {
+            let preview = MarkdownPreviewView(frame: .zero)
+            let divider = MarkdownDivider(frame: .zero)
+            for view in [preview, divider] { view.translatesAutoresizingMaskIntoConstraints = false; addSubview(view) }
+            markdownPreview = preview; markdownDivider = divider
+            preview.onScroll = { [weak self] fraction in
+                guard let self, self.markdownPreviewVisible else { return }
+                self.receivingPreviewScroll = true
+                let clip = self.scrollView.contentView
+                clip.scroll(to: NSPoint(x: clip.bounds.minX, y: CGFloat(fraction) * max(0, self.textView.bounds.height - clip.bounds.height)))
+                self.scrollView.reflectScrolledClipView(clip)
+                self.receivingPreviewScroll = false
+            }
+            preview.onClose = { [weak self] in self?.toggleMarkdownPreview() }
+            markdownConstraints = [
+                scrollView.trailingAnchor.constraint(equalTo: divider.leadingAnchor),
+                divider.widthAnchor.constraint(equalToConstant: 6),
+                divider.topAnchor.constraint(equalTo: topAnchor), divider.bottomAnchor.constraint(equalTo: bottomAnchor),
+                divider.trailingAnchor.constraint(equalTo: preview.leadingAnchor),
+                preview.topAnchor.constraint(equalTo: topAnchor), preview.bottomAnchor.constraint(equalTo: bottomAnchor),
+                preview.trailingAnchor.constraint(equalTo: trailingAnchor)
+            ]
+            markdownWidth = preview.widthAnchor.constraint(equalTo: widthAnchor, multiplier: 0.5)
+            divider.onDrag = { [weak self, weak preview] x in
+                guard let self, let preview, self.bounds.width > 0 else { return }
+                self.markdownWidth?.isActive = false
+                self.markdownWidth = preview.widthAnchor.constraint(equalTo: self.widthAnchor, multiplier: min(0.75, max(0.25, 1 - x / self.bounds.width)))
+                self.markdownWidth?.isActive = true
+            }
+        }
+        markdownPreview?.isHidden = !visible; markdownDivider?.isHidden = !visible
+        if visible {
+            editorTrailing.isActive = false
+            NSLayoutConstraint.activate(markdownConstraints); markdownWidth?.isActive = true
+            markdownPreview?.update(source: logicalText, url: fileURL, dark: effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
+        } else {
+            NSLayoutConstraint.deactivate(markdownConstraints); markdownWidth?.isActive = false
+            editorTrailing.isActive = true
+            markdownPreview?.suspend()
+        }
+    }
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        if editorTrailing != nil { updateMarkdownPreview() }
+    }
     private let scrollView = NSScrollView()
     private let textView = EditorTextView()
     /// このペインの編集履歴（窓ではなくペインごとに持つ。undoManager(for:) 参照）。
@@ -67,6 +137,7 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate {
 
     var onStateChange: ((ViewerState) -> Void)?
     var onSearchState: ((Int, Int, Bool, Int, Bool, Bool) -> Void)?
+    var onSearchResults: (([(Int, String)], Bool) -> Void)?
     var onDropFiles: (([URL]) -> Void)?
 
     // 検索は素の編集状態でのみ（構造化／整形／クエリ中は読み取り専用の見た目で、
@@ -184,6 +255,16 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate {
         textView.autoresizingMask = [.width]
         textView.textContainer?.widthTracksTextView = true
         textView.delegate = self
+        textView.textStorage?.delegate = self
+        textView.onColumnModeChange = { [weak self] enabled in
+            guard let self else { return }
+            if enabled {
+                self.wrapBeforeColumnMode = self.textView.textContainer?.widthTracksTextView ?? true
+                self.setWrapMode(wrapped: false)
+            } else if self.canEdit { self.setWrapMode(wrapped: self.wrapBeforeColumnMode) }
+            self.emitState()
+        }
+        textView.onColumnSelectionChange = { [weak self] in self?.emitState() }
         applyColors()
 
         scrollView.documentView = textView
@@ -231,19 +312,20 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate {
         headerTopToBar = structuredHeader.topAnchor.constraint(equalTo: jsonQueryBar.bottomAnchor)
         rulerTopToContainer = columnRuler.topAnchor.constraint(equalTo: topAnchor)
         rulerTopToBar = columnRuler.topAnchor.constraint(equalTo: jsonQueryBar.bottomAnchor)
+        editorTrailing = scrollView.trailingAnchor.constraint(equalTo: trailingAnchor)
         NSLayoutConstraint.activate([
             jsonQueryBar.topAnchor.constraint(equalTo: topAnchor, constant: 6),
             jsonQueryBar.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-            jsonQueryBar.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            jsonQueryBar.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor, constant: -8),
             jsonQueryBar.heightAnchor.constraint(equalToConstant: JsonQueryBar.height),
             columnRuler.leadingAnchor.constraint(equalTo: leadingAnchor),
-            columnRuler.trailingAnchor.constraint(equalTo: trailingAnchor),
+            columnRuler.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
             columnRuler.heightAnchor.constraint(equalToConstant: ColumnRulerView.height),
             structuredHeader.leadingAnchor.constraint(equalTo: leadingAnchor),
-            structuredHeader.trailingAnchor.constraint(equalTo: trailingAnchor),
+            structuredHeader.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
             structuredHeader.heightAnchor.constraint(equalToConstant: StructuredHeaderView.height),
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            editorTrailing,
             scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
             scrollTopToContainer,
         ])
@@ -586,7 +668,9 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate {
     /// 本文を差し替えた／編集したときに呼ぶ（次に必要になったとき数え直す）。
     /// 本文が変われば検索の一致位置も無効になるので、ここで数え直す（本文の代入は
     /// delegate を通らないため、textDidChange だけでは取りこぼす）。
+    private(set) var contentRevision = 0
     private func invalidateLineIndex() {
+        contentRevision &+= 1
         lineIndexCache = nil
         lineNumberRuler?.updateThickness()
         lineNumberRuler?.needsDisplay = true
@@ -594,6 +678,7 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate {
     }
 
     @objc private func scrolled() {
+        syncMarkdownScroll()
         lineNumberRuler?.needsDisplay = true
         syncColumnRuler()                               // 横スクロールに目盛りを追従させる
         syncStructuredHeader()                          // 列名の帯も一緒に流す
@@ -890,6 +975,14 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate {
 
     // MARK: - マルチカーソル（NSTextView の不連続選択に載る＝このペインだけ）
 
+    private var wrapBeforeColumnMode = true
+    var columnModeEnabled: Bool { textView.columnModeEnabled }
+    func toggleColumnMode() {
+        guard canEdit else { NSSound.beep(); return }
+        textView.setColumnMode(!textView.columnModeEnabled)
+        textView.toolTip = textView.columnModeEnabled ? L("column.hint") : nil
+        textView.window?.makeFirstResponder(textView)
+    }
     var supportsMultiCursor: Bool { canEdit }
     func addCaret(above: Bool) {
         guard canEdit else { NSSound.beep(); return }
@@ -901,6 +994,30 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate {
     }
 
     // MARK: - 検索・置換
+
+    private var searchSelection: NSRange?
+    func textStorage(_ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions,
+                     range editedRange: NSRange, changeInLength delta: Int) {
+        guard editedMask.contains(.editedCharacters), let scope = searchSelection else { return }
+        let oldEnd = NSMaxRange(editedRange) - delta
+        func mapped(_ position: Int, isEnd: Bool) -> Int {
+            if position < editedRange.location { return position }
+            if position > oldEnd { return position + delta }
+            return isEnd ? NSMaxRange(editedRange) : editedRange.location
+        }
+        let start = mapped(scope.location, isEnd: false), end = mapped(NSMaxRange(scope), isEnd: true)
+        searchSelection = NSRange(location: max(0, start), length: max(0, end - start))
+    }
+
+    @discardableResult func useSelectionSearch(_ enabled: Bool) -> Bool {
+        if enabled {
+            let range = textView.selectedRange()
+            guard range.length > 0, preFilterText == nil else { return false }
+            searchSelection = range
+        } else { searchSelection = nil }
+        recomputeMatches()
+        return true
+    }
 
     func setSearchQuery(_ q: String) {
         guard q != searchQuery else { return }
@@ -1036,7 +1153,15 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate {
 
     /// 本文全体の一致を数え直し、ハイライトと件数表示を更新する。
     private func recomputeMatches() {
-        matches = matchRanges(in: textView.string)
+        if var range = searchSelection {
+            let length = (textView.string as NSString).length
+            range.location = min(range.location, length)
+            range.length = min(range.length, length - range.location)
+            searchSelection = range
+            matches = matchRanges(in: (textView.string as NSString).substring(with: range)).map {
+                NSRange(location: $0.location + range.location, length: $0.length)
+            }
+        } else { matches = matchRanges(in: textView.string) }
         matchesCapped = matches.count >= Self.matchCap
         currentMatch = 0
         applySearchHighlight()
@@ -1073,6 +1198,23 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate {
 
     private func emitSearchState() {
         onSearchState?(currentMatch, matches.count, false, 0, searchInvalid, matchesCapped)
+    }
+
+    var searchResultsLeadingInset: CGFloat { scrollView.rulersVisible ? (lineNumberRuler?.ruleThickness ?? 0) : 0 }
+
+    func findAll() {
+        let ns = textView.string as NSString
+        let count = min(matches.count, 500)
+        var scanned = 0, line = 0
+        let rows = (0..<count).map { i -> (Int, String) in
+            let range = ns.lineRange(for: NSRange(location: matches[i].location, length: 0))
+            if range.location > scanned {
+                for j in scanned..<range.location where ns.character(at: j) == 10 { line += 1 }
+                scanned = range.location
+            }
+            return (line, String(ns.substring(with: range).trimmingCharacters(in: .newlines).prefix(1000)))
+        }
+        onSearchResults?(rows, matchesCapped || matches.count > count)
     }
 
     /// 一致を塗る。可視範囲だけ塗るのでヒットが数万でもスクロールが重くならない
@@ -1173,6 +1315,53 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate {
         textView.setSelectedRange(NSRange(location: min(ranges[0].location, storage.length), length: 0))
     }
 
+    func replacementPreview(_ replacement: String) -> ReplacementPreview? {
+        guard canEdit, supportsReplace else { return nil }
+        let source = textView.string as NSString
+        let revision = contentRevision
+        var appliedRevision: Int?
+        var ranges: [NSRange] = []
+        var strings: [String] = []
+        var rows: [String] = []
+        var details: [ReplacementDetail] = []
+        var end = 0
+        var scanned = 0
+        var line = 1
+        for range in matches where range.location >= end {
+            guard let value = replacementText(for: range, with: replacement) else { continue }
+            for i in scanned..<range.location where source.character(at: i) == 10 { line += 1 }
+            scanned = range.location
+            ranges.append(range); strings.append(value)
+            let contextRange = source.lineRange(for: range)
+            details.append(ReplacementDetail(line: line, source: source.substring(with: contextRange),
+                range: NSRange(location: range.location - contextRange.location, length: range.length), replacement: value))
+            rows.append("\(line)  ·  \(source.substring(with: range))  →  \(value.isEmpty ? "∅" : value)")
+            end = NSMaxRange(range)
+            if rows.count == 500 { break }
+        }
+        return ReplacementPreview(rows: rows, details: details, limited: matchesCapped || matches.count > rows.count,
+            apply: { [weak self] selected in
+                guard let self, self.contentRevision == revision, self.canEdit,
+                      let storage = self.textView.textStorage else { return false }
+                let indices = selected.sorted().filter { ranges.indices.contains($0) }
+                guard !indices.isEmpty else { return false }
+                let rs = indices.map { ranges[$0] }, ss = indices.map { strings[$0] }
+                guard self.textView.shouldChangeText(inRanges: rs.map { NSValue(range: $0) }, replacementStrings: ss) else { return false }
+                self.paneUndoManager.beginUndoGrouping()
+                storage.beginEditing()
+                for i in indices.reversed() { storage.replaceCharacters(in: ranges[i], with: strings[i]) }
+                storage.endEditing()
+                self.textView.didChangeText()
+                self.paneUndoManager.endUndoGrouping()
+                self.applyParagraphStyle()
+                appliedRevision = self.contentRevision
+                return true
+            }, undo: { [weak self] in self?.paneUndoManager.undo() }, canUndo: { [weak self] in
+                guard let self, let appliedRevision else { return false }
+                return self.contentRevision == appliedRevision && self.paneUndoManager.canUndo
+            })
+    }
+
     /// 一致レンジ `range` に当てる置換後文字列（正規表現は $1 展開・ケース維持を反映）。
     /// パターンに一致しなくなっていれば nil。
     private func replacementText(for range: NSRange, with replacement: String) -> String? {
@@ -1216,6 +1405,15 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate {
                              : bookmarks.filter { $0 < from }.max()
         guard let target else { NSSound.beep(); return }
         goToLine(target + 1)
+    }
+
+    func revealSourceByteOffset(_ offset: Int) {
+        if preFilterText != nil { setFilterMode(false) }
+        let bytes = textView.string.utf8
+        let end = bytes.index(bytes.startIndex, offsetBy: max(0, min(offset, bytes.count)))
+        let location = String(decoding: bytes[..<end], as: UTF8.self).utf16.count
+        let range = NSRange(location: location, length: 0)
+        textView.setSelectedRange(range); textView.scrollRangeToVisible(range); focusContent()
     }
 
     func goToLine(_ line1Based: Int) {
@@ -1273,6 +1471,8 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate {
     // MARK: - 構造化表示
 
     func setStructuredMode(_ mode: StructuredMode?) {
+        previewEnabled = false
+        updateMarkdownPreview()
         applyStructuredMode(mode)
         updateColumnGuideVisibility()   // 整形後の表示にガイド線を残さない（入口が多いのでここで一括）
         updateTopLayout()               // 構造化中は列名の帯へ張り替える
@@ -1485,7 +1685,7 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate {
     /// 折り返し（true）／横スクロール（false・列を折り返さない）を切り替える。
     private func setWrapMode(wrapped: Bool) {
         guard let container = textView.textContainer else { return }
-        if wrapped {
+        if wrapped && !textView.columnModeEnabled {
             container.widthTracksTextView = true
             textView.isHorizontallyResizable = false
             textView.autoresizingMask = [.width]
@@ -1661,6 +1861,8 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate {
     }
 
     private func emitState() {
+        if !canEdit && textView.columnModeEnabled { textView.setColumnMode(false) }
+        updateMarkdownPreview()
         let state = ViewerState(
             encodingName: encoding.displayName,
             lineCount: lineCount(of: logicalText),
@@ -1668,7 +1870,8 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate {
             // クリーン時は読み込み時の実ディスクサイズ（正確・安価）。編集中は保存されるバイト数をライブ計算。
             fileSize: isDirty ? liveByteSize : byteSize,
             indexProgress: 1.0,
-            caret: caretPosition
+            caret: caretPosition,
+            columnSelectionCount: textView.columnSelectionCount
         )
         onStateChange?(state)
         syncColumnRuler()   // キャレット桁・選択の帯はここで追従する
