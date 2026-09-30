@@ -1,0 +1,7 @@
+project: MrEditor
+preview:
+  enabled: true
+  formats:
+    - Markdown
+    - YAML
+    - Mermaid
