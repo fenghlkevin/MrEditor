@@ -1,4 +1,4 @@
-MrEditor document preview
+TextStack document preview
 
 MIT License
 

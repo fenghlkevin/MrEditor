@@ -205,13 +205,13 @@
 "prefs.share.importClipboard" = "Import from Clipboard";
 "prefs.share.copied" = "Share link copied to clipboard.";
 "prefs.share.imported" = "Settings applied.";
-"prefs.share.export.defaultName" = "MrEditor Theme";
+"prefs.share.export.defaultName" = "TextStack Theme";
 "share.apply.title" = "Apply these appearance settings?";
 "share.apply.confirm" = "Apply";
 "share.import.failed.title" = "Couldn’t read the settings";
-"share.import.failed.message" = "The link or file isn’t a valid MrEditor appearance profile.";
+"share.import.failed.message" = "The link or file isn’t a valid TextStack appearance profile.";
 "share.clipboard.empty.title" = "No settings link found";
-"share.clipboard.empty.message" = "Copy an MrEditor settings link, then try again.";
+"share.clipboard.empty.message" = "Copy a TextStack settings link, then try again.";
 "gotoLine.prompt" = "Go to line:";
 "gotoLine.go" = "Go";
 "common.cancel" = "Cancel";
@@ -588,9 +588,9 @@
 
 "defaults.title" = "Default Apps";
 
-"defaults.hint" = "Select text types to open with MrEditor. macOS may ask for confirmation. Changes apply to all files of the same content type, including its other extensions.";
+"defaults.hint" = "Select text types to open with TextStack. macOS may ask for confirmation. Changes apply to all files of the same content type, including its other extensions.";
 
-"defaults.apply" = "Use MrEditor";
+"defaults.apply" = "Use TextStack";
 
 "defaults.restore" = "Restore Selected";
 
@@ -622,7 +622,7 @@
 "defaults.code" = "Code and scripts";
 "defaults.custom" = "Custom extensions";
 "defaults.invalidExtension" = "Enter valid extensions separated by commas.";
-"defaults.managed" = "✓ Opens with MrEditor";
+"defaults.managed" = "✓ Opens with TextStack";
 "diff.pickDocuments" = "Choose two open documents to compare";
 "diff.left" = "Left document";
 "diff.right" = "Right document";

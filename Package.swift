@@ -36,7 +36,7 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "MrEditor",
+            name: "TextStack",
             dependencies: ["MrEditorCore"],
             path: "Sources/MrEditor"
         ),

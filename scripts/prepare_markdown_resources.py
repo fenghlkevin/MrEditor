@@ -7,7 +7,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parent.parent
 web = root / "web-renderer"
 assets = root / "Sources/MrEditorCore/Resources/MarkdownPreview"
-notices = ["MrEditor document preview\n\n" + (root / "LICENSE").read_text()]
+notices = ["TextStack document preview\n\n" + (root / "LICENSE").read_text()]
 lock = json.loads((web / "package-lock.json").read_text())
 allowed = {"MIT", "ISC", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0", "Python-2.0", "Unlicense"}
 inventory = []

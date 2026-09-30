@@ -92,7 +92,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController, WKN
         root.addSubview(web)
         setupToolbar(in: root)
 
-        status = NSTextField(wrappingLabelWithString: "MrEditor · Preview")
+        status = NSTextField(wrappingLabelWithString: "TextStack · Preview")
         status.textColor = .secondaryLabelColor
         status.alignment = .center
         status.translatesAutoresizingMaskIntoConstraints = false
@@ -119,7 +119,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController, WKN
         hasScope = url.startAccessingSecurityScopedResource()
         images.root = url.deletingLastPathComponent()
         status.isHidden = false
-        status.stringValue = "MrEditor · Preview"
+        status.stringValue = "TextStack · Preview"
         os_log("Preparing Document Quick Look preview", log: logger, type: .info)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = Result { try QuickLookMarkdownDocument.read(url) }
@@ -240,8 +240,8 @@ final class PreviewViewController: NSViewController, QLPreviewingController, WKN
     @objc private func showHelp(_ sender: NSButton) {
         if let panel = helpPanel { panel.removeFromSuperview(); helpPanel = nil; return }
         let text = NSTextField(wrappingLabelWithString: label(
-            "文件快速查看\n\n↻ 重新读取磁盘上的文件\n缩小 / 重置 / 放大：50%–250%\n源码：只读查看，再次点击返回预览\n主题：跟随系统 → 浅色 → 深色\n目录：点击页面右上角目录按钮跳转\n再次点击问号关闭帮助。\n\n按空格或 Esc 关闭；编辑请点“通过 MrEditor 打开”。",
-            "Document Quick Look\n\nReload reads the file from disk.\nZoom out / reset / in: 50%–250%.\nSource toggles a read-only source view.\nTheme cycles System → Light → Dark.\nUse the page’s outline button to jump to headings.\nClick Help again to close this panel.\n\nSpace or Esc closes Quick Look. Use Open with MrEditor to edit."))
+            "文件快速查看\n\n↻ 重新读取磁盘上的文件\n缩小 / 重置 / 放大：50%–250%\n源码：只读查看，再次点击返回预览\n主题：跟随系统 → 浅色 → 深色\n目录：点击页面右上角目录按钮跳转\n再次点击问号关闭帮助。\n\n按空格或 Esc 关闭；编辑请点“通过 TextStack 打开”。",
+            "Document Quick Look\n\nReload reads the file from disk.\nZoom out / reset / in: 50%–250%.\nSource toggles a read-only source view.\nTheme cycles System → Light → Dark.\nUse the page’s outline button to jump to headings.\nClick Help again to close this panel.\n\nSpace or Esc closes Quick Look. Use Open with TextStack to edit."))
         let panel = NSBox()
         panel.boxType = .custom
         panel.fillColor = .windowBackgroundColor
@@ -291,7 +291,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController, WKN
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
             guard let self, !self.ready else { return }
-            self.status.stringValue = "MrEditor: Markdown renderer could not be loaded."
+            self.status.stringValue = "TextStack: Markdown renderer could not be loaded."
         }
     }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -303,7 +303,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController, WKN
         ready = false
         guard recoveryAttempts < 1 else {
             status.isHidden = false
-            status.stringValue = "MrEditor: Markdown renderer could not be started."
+            status.stringValue = "TextStack: Markdown renderer could not be started."
             return
         }
         recoveryAttempts += 1

@@ -12,10 +12,10 @@ CONFIG="${1:-debug}"
 # Pro 版（MrkEditor）は別リポからこのスクリプトを呼び、次を渡す:
 #   APP_NAME=MrkEditor BUNDLE_ID=com.aaedit.MrkEditor EXECUTABLE=MrkEditor \
 #   ICON=art/AppIcon-Pro.icns COPYRIGHT="© 2026 TABATA Hitoshi. All rights reserved."
-APP_NAME="${APP_NAME:-MrEditor}"
+APP_NAME="${APP_NAME:-TextStack}"
 BUNDLE_ID="${BUNDLE_ID:-com.aaedit.MrEditor}"
 # 実行ファイル名（SPM の executableTarget 名）。無料版=MrEditor / Pro 版=MrkEditor。
-EXECUTABLE="${EXECUTABLE:-MrEditor}"
+EXECUTABLE="${EXECUTABLE:-TextStack}"
 # バージョン（Info.plist へ埋め込む）。make_dmg.sh と揃えるため VERSION で上書き可能。
 VERSION="${VERSION:-1.18.0}"
 
@@ -28,7 +28,7 @@ URL_SCHEME="${URL_SCHEME:-mreditor}"
 # ここを無条件に無料版の URL にすると、同じ core から包む Pro 版まで無料版の
 # ダウンロードを勧めてしまう（買った人に無料版を配ることになる）。配布の出どころは
 # 製品ごとに名乗る建て付けにして、無料版（このバンドル ID）だけが既定で名乗る。
-if [ "$BUNDLE_ID" = "com.aaedit.MrEditor" ]; then
+if [ "$APP_NAME" = "MrEditor" ] && [ "$BUNDLE_ID" = "com.aaedit.MrEditor" ]; then
     UPDATE_FEED="${UPDATE_FEED-https://api.github.com/repos/MR-TABATA/MrEditor/releases/latest}"
 else
     UPDATE_FEED="${UPDATE_FEED-}"

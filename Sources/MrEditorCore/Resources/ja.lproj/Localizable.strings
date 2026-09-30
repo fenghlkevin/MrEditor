@@ -205,13 +205,13 @@
 "prefs.share.importClipboard" = "リンクから読み込み";
 "prefs.share.copied" = "共有リンクをクリップボードにコピーしました。";
 "prefs.share.imported" = "設定を適用しました。";
-"prefs.share.export.defaultName" = "MrEditor テーマ";
+"prefs.share.export.defaultName" = "TextStack テーマ";
 "share.apply.title" = "この外観設定を適用しますか？";
 "share.apply.confirm" = "適用";
 "share.import.failed.title" = "設定を読み込めませんでした";
-"share.import.failed.message" = "リンクまたはファイルが MrEditor の外観プロファイルではありません。";
+"share.import.failed.message" = "リンクまたはファイルが TextStack の外観プロファイルではありません。";
 "share.clipboard.empty.title" = "設定リンクが見つかりません";
-"share.clipboard.empty.message" = "MrEditor の設定リンクをコピーしてから、もう一度お試しください。";
+"share.clipboard.empty.message" = "TextStack の設定リンクをコピーしてから、もう一度お試しください。";
 "gotoLine.prompt" = "移動先の行番号:";
 "gotoLine.go" = "移動";
 "common.cancel" = "キャンセル";
@@ -590,7 +590,7 @@
 
 "defaults.hint" = "対象の種類を選択してください。同じ内容タイプの拡張子にも適用されます。macOS が確認を求める場合があります。";
 
-"defaults.apply" = "MrEditor に設定";
+"defaults.apply" = "TextStack に設定";
 
 "defaults.restore" = "選択を元に戻す";
 
@@ -622,7 +622,7 @@
 "defaults.code" = "コードとスクリプト";
 "defaults.custom" = "カスタム拡張子";
 "defaults.invalidExtension" = "有効な拡張子をカンマで区切って入力してください。";
-"defaults.managed" = "✓ MrEditor で開く";
+"defaults.managed" = "✓ TextStack で開く";
 "diff.pickDocuments" = "比較する文書を選択";
 "diff.left" = "左の文書";
 "diff.right" = "右の文書";

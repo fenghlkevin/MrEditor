@@ -12,7 +12,7 @@ enum AppInfo {
     static var name: String {
         (Bundle.main.infoDictionary?["CFBundleName"] as? String) ?? fallbackName
     }
-    private static let fallbackName = "MrEditor"
+    private static let fallbackName = "TextStack"
 
     /// 表示用バージョン。配布 .app は Info.plist（CFBundleShortVersionString）を優先し、
     /// 開発ビルド（バンドル無し）ではこの定数へフォールバックする。

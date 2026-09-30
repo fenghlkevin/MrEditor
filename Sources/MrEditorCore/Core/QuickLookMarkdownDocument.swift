@@ -27,8 +27,8 @@ enum QuickLookMarkdownDocument {
         if truncated {
             if let newline = text.lastIndex(of: "\n") { text = String(text[..<newline]) }
             let notice = Locale.preferredLanguages.first?.hasPrefix("zh") == true
-                ? "文件较大，仅预览开头部分。请在 MrEditor 中打开查看全文。"
-                : "Preview truncated. Open in MrEditor to read the complete file."
+                ? "文件较大，仅预览开头部分。请在 TextStack 中打开查看全文。"
+                : "Preview truncated. Open in TextStack to read the complete file."
             text += "\n\n> " + notice
         }
         return text

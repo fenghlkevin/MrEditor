@@ -201,13 +201,13 @@
 "prefs.share.importClipboard" = "从剪贴板导入";
 "prefs.share.copied" = "已复制共享链接。";
 "prefs.share.imported" = "设置已应用。";
-"prefs.share.export.defaultName" = "MrEditor 主题";
+"prefs.share.export.defaultName" = "TextStack 主题";
 "share.apply.title" = "要应用这些外观设置吗？";
 "share.apply.confirm" = "应用";
 "share.import.failed.title" = "无法读取设置";
-"share.import.failed.message" = "该链接或文件不是有效的 MrEditor 外观配置。";
+"share.import.failed.message" = "该链接或文件不是有效的 TextStack 外观配置。";
 "share.clipboard.empty.title" = "未找到设置链接";
-"share.clipboard.empty.message" = "请先复制 MrEditor 设置链接，然后重试。";
+"share.clipboard.empty.message" = "请先复制 TextStack 设置链接，然后重试。";
 "gotoLine.prompt" = "跳转到行：";
 "gotoLine.go" = "跳转";
 "common.cancel" = "取消";
@@ -578,9 +578,9 @@
 
 "defaults.title" = "默认打开程序";
 
-"defaults.hint" = "勾选要由 MrEditor 默认打开的文本类型。更改对同一内容类型的其他扩展名也生效，macOS 可能要求确认。";
+"defaults.hint" = "勾选要由 TextStack 默认打开的文本类型。更改对同一内容类型的其他扩展名也生效，macOS 可能要求确认。";
 
-"defaults.apply" = "设为 MrEditor";
+"defaults.apply" = "设为 TextStack";
 
 "defaults.restore" = "恢复所选原程序";
 
@@ -612,7 +612,7 @@
 "defaults.code" = "代码与脚本";
 "defaults.custom" = "自定义扩展名";
 "defaults.invalidExtension" = "请输入有效扩展名，多个扩展名用逗号分隔。";
-"defaults.managed" = "✓ 已由 MrEditor 打开";
+"defaults.managed" = "✓ 已由 TextStack 打开";
 "diff.pickDocuments" = "选择要比较的两个已打开文件";
 "diff.left" = "左侧文件";
 "diff.right" = "右侧文件";
