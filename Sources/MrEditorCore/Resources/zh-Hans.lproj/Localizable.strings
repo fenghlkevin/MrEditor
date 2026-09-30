@@ -514,7 +514,7 @@
 
 "markdown.preview" = "预览";
 "markdown.closePreview" = "关闭预览";
-"markdown.togglePreview" = "Markdown 预览";
+"markdown.togglePreview" = "文件预览";
 
 // Display mode menu
 "display.menu" = "显示方式";
@@ -632,3 +632,8 @@
 "column.status" = "列模式 · %d 行 · Esc 退出";
 "column.pasteMismatch" = "粘贴内容有 %d 行，当前选择了 %d 行";
 "column.pasteHint" = "单行文本会插入每一行；多行文本的行数需与选中行数相同。";
+
+"workspace.localHint" = "打开本地文件，开始查看和编辑。";
+"workspace.remoteHint" = "连接服务器，打开远程文件或查看日志。";
+
+"markdown.basicPreview" = "基础预览：增强渲染器暂不可用。";

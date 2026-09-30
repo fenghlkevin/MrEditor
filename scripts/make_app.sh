@@ -21,7 +21,7 @@ VERSION="${VERSION:-1.18.0}"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ICON="${ICON:-$ROOT/art/AppIcon.icns}"
-COPYRIGHT="${COPYRIGHT:-© 2026 TABATA Hitoshi. MIT License.}"
+COPYRIGHT="${COPYRIGHT:-© 2026 TABATA Hitoshi. Includes GPL-3.0 FluxMarkdown components; see bundled ThirdPartyNotices.txt.}"
 # 共有リンクのスキーム（mreditor://theme?d=…）。
 URL_SCHEME="${URL_SCHEME:-mreditor}"
 # 更新確認の feed（GitHub Releases の API）。**既定は「無し」＝更新確認をしない。**
@@ -64,6 +64,12 @@ cp "$BIN" "$APP/Contents/MacOS/$EXECUTABLE"
 if [ -d "$RESBUNDLE" ]; then
     cp -R "$RESBUNDLE" "$APP/Contents/Resources/"
 fi
+
+PREVIEW_RESOURCES="$APP/Contents/Resources/$(basename "$RESBUNDLE")/MarkdownPreview"
+if [ -d "$APP/Contents/Resources/$(basename "$RESBUNDLE")/Contents/Resources" ]; then
+    PREVIEW_RESOURCES="$APP/Contents/Resources/$(basename "$RESBUNDLE")/Contents/Resources/MarkdownPreview"
+fi
+python3 "$ROOT/scripts/verify_markdown_resources.py" "$PREVIEW_RESOURCES"
 
 # アプリアイコン（既定 art/AppIcon.icns、Pro は ICON で差し替え）を同梱する。
 if [ -f "$ICON" ]; then
@@ -184,6 +190,8 @@ fi)
 </plist>
 PLIST
 
+SIGN_IDENTITY="$SIGN_IDENTITY" sh "$ROOT/scripts/build_quicklook.sh" "$APP" "$BIN"
+
 # ---------------------------------------------------------------------------
 # コード署名。**これを省くと、ダウンロードした他の Mac でアプリがクラッシュする。**
 #
@@ -201,7 +209,10 @@ PLIST
 # ad-hoc のままでも**クラッシュはしなくなる**（初回は右クリック→開くが必要）。
 # Developer ID を取得したら SIGN_IDENTITY を渡すだけで正式署名に切り替わる。
 if [ "$SIGN_IDENTITY" = "-" ]; then
-    codesign --force --deep --sign - "$APP"
+    if [ -d "$APP/Contents/Resources/$(basename "$RESBUNDLE")" ]; then
+        codesign --force --sign - "$APP/Contents/Resources/$(basename "$RESBUNDLE")"
+    fi
+    codesign --force --sign - "$APP"
 else
     # 正式署名では入れ子から順に署名し、hardened runtime を有効にする（公証の要件）。
     if [ -d "$APP/Contents/Resources/$(basename "$RESBUNDLE")" ]; then

@@ -1,7 +1,9 @@
 // swift-tools-version: 5.9
 import PackageDescription
 
-// 無料コア（MIT）と Pro（クローズド・別リポ）を1本の依存方向で繋ぐための構成。
+// Original core: MIT. This variant includes GPL-3.0 FluxMarkdown preview code.
+// Review web-renderer/UPSTREAM.md before incorporating this variant into Pro.
+// 無料コアと Pro（別リポ）を1本の依存方向で繋ぐための構成。
 //
 //   MrEditorCore (library) ── 本体のほぼ全部。UI もエンジンもここ。
 //        ├── MrEditor  (executable)  … 無料版。Pro を渡さずに起動する。
@@ -26,7 +28,11 @@ let package = Package(
             dependencies: ["CMarkdown"],
             path: "Sources/MrEditorCore",
             resources: [
-                .process("Resources")
+                .process("Resources/en.lproj"),
+                .process("Resources/ja.lproj"),
+                .process("Resources/zh-Hans.lproj"),
+                .process("Resources/AppIcon.icns"),
+                .copy("Resources/MarkdownPreview")
             ]
         ),
         .executableTarget(

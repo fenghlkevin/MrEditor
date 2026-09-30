@@ -130,7 +130,7 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate {
         off.target = controller
         menu.addItem(off)
         menu.addItem(.separator())
-        let markdown = NSMenuItem(title: "Markdown", action: #selector(MainWindowController.toolbarMarkdownPreview(_:)), keyEquivalent: "")
+        let markdown = NSMenuItem(title: L("markdown.preview"), action: #selector(MainWindowController.toolbarMarkdownPreview(_:)), keyEquivalent: "")
         markdown.target = controller
         menu.addItem(markdown)
         for mode in [StructuredMode.json, .ndjson, .csv, .tsv, .fixedWidth] {

@@ -416,7 +416,8 @@ vmmap $(pgrep -x MrEditor) | grep test_10gb.log     # → 10.0G  9.1G  0K  (vsiz
 
 ## MrkEditor — paid analysis companion
 
-Everything in this repository stays **free and MIT**. Sold separately, **MrkEditor** adds analysis
+The original MrEditor code remains **MIT-licensed**. This local variant also includes
+**GPL-3.0 FluxMarkdown-derived preview components**; see [integration licensing](web-renderer/UPSTREAM.md). Sold separately, **MrkEditor** adds analysis
 features on top of the same editor core, and the line is: **reading one file is free; pulling an
 answer out of it is paid.**
 
@@ -445,7 +446,10 @@ automation and analysis tooling are out of scope (it's open-core — fork freely
 
 ## License
 
-[MIT](LICENSE) © 2026 TABATA Hitoshi
+Original MrEditor: [MIT](LICENSE) © 2026 TABATA Hitoshi.
+
+Enhanced Markdown preview: FluxMarkdown-derived components under [GPL-3.0](web-renderer/LICENSE),
+© 2024–2026 xykong. This combined build is not MIT-only. See [provenance and changes](web-renderer/UPSTREAM.md).
 
 ---
 
@@ -453,7 +457,14 @@ automation and analysis tooling are out of scope (it's open-core — fork freely
 
 ### Markdown preview
 
-Local `.md` and `.markdown` documents up to 8 MiB open with editable source on the left and live preview on the right. Drag the divider to resize, or choose Markdown Preview / Off in the display dropdown. Source and preview scroll in both directions using proportional document progress. Supports CommonMark, tables, task lists, strikethrough, fenced code, and relative images within the document directory. Rendering is offline; remote images and raw HTML are not loaded. Larger files retain the existing large-file editor.
+Markdown files open with a live split preview. The preview now uses a bundled
+FluxMarkdown-derived renderer for syntax highlighting, KaTeX, Mermaid, tables,
+task lists, footnotes, GitHub Alerts, YAML frontmatter and a clickable outline.
+It preserves bidirectional scroll synchronization and light/dark appearance.
+Scripts, fonts and styles are bundled for offline use; local images are scoped
+to the document folder and remote images are blocked.
+
+See [build and verification notes](docs/markdown-preview.md).
 
 ### JSON source, tree and formatting
 

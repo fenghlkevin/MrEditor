@@ -524,7 +524,7 @@
 
 "markdown.preview" = "プレビュー";
 "markdown.closePreview" = "プレビューを閉じる";
-"markdown.togglePreview" = "Markdown プレビュー";
+"markdown.togglePreview" = "ファイルプレビュー";
 
 // Display mode menu
 "display.menu" = "表示形式";
@@ -642,3 +642,8 @@
 "column.status" = "列モード · %d 行 · Esc で終了";
 "column.pasteMismatch" = "貼り付けは %d 行、選択は %d 行です";
 "column.pasteHint" = "1 行はすべての選択に挿入。複数行は選択数と一致する必要があります。";
+
+"workspace.localHint" = "ローカルファイルを開いて表示・編集します。";
+"workspace.remoteHint" = "サーバーに接続してリモートファイルやログを開きます。";
+
+"markdown.basicPreview" = "基本プレビュー — 拡張レンダラーを読み込めませんでした。";

@@ -15,7 +15,7 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate, NSTextStor
     private var markdownWidth: NSLayoutConstraint?
     private var editorTrailing: NSLayoutConstraint!
     private var previewEnabled = true
-    var supportsMarkdownPreview: Bool { ["md", "markdown"].contains(fileURL?.pathExtension.lowercased() ?? "") }
+    var supportsMarkdownPreview: Bool { DocumentPreviewFormat.kind(for: fileURL) != nil }
     private var receivingPreviewScroll = false
     var markdownPreviewVisible: Bool { supportsMarkdownPreview && previewEnabled }
     func toggleMarkdownPreview() { setMarkdownPreviewVisible(!previewEnabled) }

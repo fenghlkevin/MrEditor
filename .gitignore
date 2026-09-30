@@ -32,3 +32,6 @@ art/logo-proposal.html
 
 # Claude Code へのローカル指示（各自の手元のもの。共有しない）
 CLAUDE.md
+
+# Markdown renderer development dependencies
+web-renderer/node_modules/

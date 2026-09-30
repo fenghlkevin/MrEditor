@@ -376,7 +376,8 @@ vmmap $(pgrep -x MrEditor) | grep test_10gb.log     # → 10.0G  2.8G  0K  (vsiz
 
 ## MrkEditor — 有償の分析コンパニオン
 
-このリポジトリのものは**すべて無料で MIT のまま**です。別売りの **MrkEditor** は
+元の MrEditor コードは **MIT** ですが、この派生版の Markdown プレビューには
+**GPL-3.0 の FluxMarkdown 由来コード**が含まれます（[詳細](web-renderer/UPSTREAM.md)）。別売りの **MrkEditor** は
 同じエディタコアの上に分析機能を足す有償版で、境界はこう決めています ——
 **1 本を「見る」＝無料 / 束ねて「答えを出す」＝有償。**
 
@@ -404,4 +405,7 @@ piece table 設計により、10GB でも「速く・低メモリで開く」を
 
 ## ライセンス
 
-[MIT](LICENSE) © 2026 TABATA Hitoshi
+元の MrEditor: [MIT](LICENSE) © 2026 TABATA Hitoshi。
+
+拡張 Markdown プレビュー: [GPL-3.0](web-renderer/LICENSE)、© 2024–2026 xykong。
+この派生版全体を MIT のみとして扱うことはできません。[由来と変更内容](web-renderer/UPSTREAM.md)。

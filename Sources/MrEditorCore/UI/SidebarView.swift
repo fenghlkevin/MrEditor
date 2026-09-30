@@ -15,7 +15,6 @@ final class SidebarView: NSView {
     var onEditConnection: ((SSHConnection) -> Void)?
     var onOpenLocal: (() -> Void)?
     var onSectionChange: ((Bool) -> Void)?
-    var onPreferences: (() -> Void)?
     private let stack = NSStackView()
     private let tabs = NSSegmentedControl(labels: [L("workspace.local"), L("workspace.servers")], trackingMode: .selectOne, target: nil, action: nil)
     private lazy var create = NSButton(title: "", target: self, action: #selector(createItem))
@@ -23,6 +22,7 @@ final class SidebarView: NSView {
     private var rows: [SidebarRow] = []
     private var documents: [WorkspaceDocument] = []
     private var groups: [WorkspaceServer] = []
+    var isRemoteSection: Bool { tabs.selectedSegment == 1 }
     private var active = -1
     private var collapsed = Set<UUID>()
     private var pending = Set<UUID>()
@@ -60,7 +60,7 @@ final class SidebarView: NSView {
     }
     @objc private func changeTab() { rebuild(); onSectionChange?(tabs.selectedSegment == 1) }
     @objc private func createItem() { if tabs.selectedSegment == 1 { onNewConnection?() } else { onOpenLocal?() } }
-    @objc private func secondaryAction() { if tabs.selectedSegment == 1 { onManageConnections?() } else { onPreferences?() } }
+    @objc private func secondaryAction() { if tabs.selectedSegment == 1 { onManageConnections?() } }
     @objc private func connect(_ sender: NSButton) {
         guard groups.indices.contains(sender.tag) else { return }
         let connection = groups[sender.tag].connection
@@ -87,7 +87,8 @@ final class SidebarView: NSView {
         rows.removeAll()
         let servers = tabs.selectedSegment == 1
         create.title = L(servers ? "workspace.newServer" : "workspace.openLocal")
-        secondary.title = L(servers ? "workspace.manageServers" : "menu.preferences")
+        secondary.title = L("workspace.manageServers")
+        secondary.isHidden = !servers
         add(heading(servers ? "workspace.servers" : "workspace.opened"))
         if !servers {
             for document in WorkspaceNavigation.local(documents) { addDocument(document, indented: false) }

@@ -143,6 +143,8 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     /// 未保存変更でウィンドウを閉じる際の二重確認を抑止するフラグ。
     private let emptyActions = NSStackView()
+    private let emptyOpen = NSButton()
+    private let emptyHint = NSTextField(labelWithString: "")
     private var forceClose = false
 
     private func setupContent() {
@@ -159,7 +161,6 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
         sidebar.onEditConnection = { connection in (NSApp.delegate as? AppDelegate)?.editRemoteConnection(connection) }
         sidebar.onNewConnection = { (NSApp.delegate as? AppDelegate)?.showRemoteConnection(create: true) }
         sidebar.onManageConnections = { (NSApp.delegate as? AppDelegate)?.showRemoteConnection() }
-        sidebar.onPreferences = { (NSApp.delegate as? AppDelegate)?.openPreferences(nil) }
         let statusHeight = statusBar.heightAnchor.constraint(equalToConstant: StatusBarView.height)
         self.statusHeight = statusHeight
 
@@ -168,21 +169,18 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
         statusBar.translatesAutoresizingMaskIntoConstraints = false
 
         content.addSubview(viewerContainer)
-        let localOpen = NSButton(title: L("entry.local"), target: self, action: #selector(openDocument(_:)))
-        let remoteOpen = NSButton(title: L("entry.remote"), target: self, action: #selector(toolbarOpenRemote(_:)))
-        localOpen.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
-        remoteOpen.image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: nil)
-        for button in [localOpen, remoteOpen] {
-            button.bezelStyle = .rounded; button.imagePosition = .imageLeading
-        }
+        emptyOpen.target = self
+        emptyOpen.bezelStyle = .rounded
+        emptyOpen.imagePosition = .imageLeading
+        emptyOpen.setContentHuggingPriority(.required, for: .horizontal)
         let welcome = NSTextField(labelWithString: L("workspace.welcome"))
         welcome.font = .systemFont(ofSize: 25, weight: .semibold)
-        let hint = NSTextField(labelWithString: L("workspace.welcomeHint"))
+        let hint = emptyHint
         hint.font = .systemFont(ofSize: 13); hint.textColor = .secondaryLabelColor
-        let actions = NSStackView(views: [localOpen, remoteOpen]); actions.spacing = 12
+        welcome.alignment = .center; hint.alignment = .center
         emptyActions.orientation = .vertical; emptyActions.alignment = .centerX
-        for view in [welcome, hint, actions] { emptyActions.addArrangedSubview(view) }
-        localOpen.toolTip = "⌘O"; remoteOpen.toolTip = "⌃⌘O"
+        for view in [welcome, hint, emptyOpen] { emptyActions.addArrangedSubview(view) }
+        updateEmptyActions()
         emptyActions.spacing = 16
         emptyActions.translatesAutoresizingMaskIntoConstraints = false
         viewerContainer.addSubview(emptyActions)
@@ -578,9 +576,19 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
 
+    private func updateEmptyActions() {
+        let remote = activeViewer.map { $0 is RemotePane } ?? sidebar.isRemoteSection
+        emptyOpen.title = L(remote ? "entry.remote" : "entry.local")
+        emptyOpen.action = remote ? #selector(toolbarOpenRemote(_:)) : #selector(openDocument(_:))
+        emptyOpen.image = NSImage(systemSymbolName: remote ? "server.rack" : "folder", accessibilityDescription: nil)
+        emptyOpen.toolTip = remote ? "⌃⌘O" : "⌘O"
+        emptyHint.stringValue = L(remote ? "workspace.remoteHint" : "workspace.localHint")
+    }
+
     private func updateWorkspaceChrome() {
+        updateEmptyActions()
         if jsonSourcePane !== activeViewer { closeJSONInspector() }
-        let remote = activeViewer is RemotePane
+        let remote = activeViewer.map { $0 is RemotePane } ?? sidebar.isRemoteSection
         statusBar.isHidden = remote
         statusHeight?.constant = remote ? 0 : StatusBarView.height
     }
@@ -588,6 +596,7 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
     func setServerConnecting(_ id: UUID, _ value: Bool) { sidebar.setConnecting(id, value) }
 
     private func selectSection(remote: Bool) {
+        updateEmptyActions()
         if let activeViewer, (activeViewer is RemotePane) == remote { return }
         if let index = viewers.indices.last(where: { (viewers[$0] is RemotePane) == remote }) {
             activate(index)
