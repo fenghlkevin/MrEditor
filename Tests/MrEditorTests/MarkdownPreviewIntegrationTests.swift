@@ -29,6 +29,29 @@ final class MarkdownPreviewIntegrationTests: XCTestCase {
         throw NSError(domain: "MarkdownPreviewTests", code: 1)
     }
 
+    func testSharedToolbarCommands() async throws {
+        _ = NSApplication.shared
+        let preview = MarkdownPreviewView(frame: NSRect(x: 0, y: 0, width: 800, height: 700))
+        preview.usesSharedToolbar = true
+        let window = NSWindow(contentRect: preview.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.contentView = preview; window.orderFront(nil)
+        defer { preview.suspend(); window.close() }
+        preview.update(source: "# Shared toolbar\n\nalpha alpha", url: URL(fileURLWithPath: "/tmp/shared.md"), dark: false)
+        try await waitFor("document.querySelector('h1') !== null && getComputedStyle(document.querySelector('.preview-search')).display === 'none'", in: preview.web)
+        preview.toolbarAction("search", value: "alpha")
+        try await waitFor("document.querySelector('.search-count').textContent === '1 / 2'", in: preview.web)
+        preview.toolbarAction("next")
+        try await waitFor("document.querySelector('.search-count').textContent === '2 / 2'", in: preview.web)
+        preview.toolbarAction("previous")
+        try await waitFor("document.querySelector('.search-count').textContent === '1 / 2'", in: preview.web)
+        preview.toolbarAction("contents")
+        try await waitFor("document.querySelector('.toc-toggle').getAttribute('aria-expanded') === 'true'", in: preview.web)
+        preview.toolbarAction("source")
+        try await waitFor("document.querySelector('.source-lines') !== null", in: preview.web)
+        preview.toolbarAction("source")
+        try await waitFor("document.querySelector('h1') !== null", in: preview.web)
+    }
+
     func testMultipleDocumentFormatsAndSearchInWebKit() async throws {
         _ = NSApplication.shared
         let preview = MarkdownPreviewView(frame: NSRect(x: 0, y: 0, width: 800, height: 900))
@@ -178,6 +201,51 @@ final class MarkdownPreviewIntegrationTests: XCTestCase {
         XCTAssertEqual(networkBlocked as? Bool, true)
     }
 
+    func testDiagramLabelsNavigationAndSourceToggle() async throws {
+        _ = NSApplication.shared
+        let preview = MarkdownPreviewView(frame: NSRect(x: 0, y: 0, width: 800, height: 700))
+        let window = NSWindow(contentRect: preview.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.contentView = preview; window.orderFront(nil)
+        defer { preview.suspend(); window.close() }
+        let source = """
+        # **标题** `code`
+
+        ```mermaid
+        gantt
+        dateFormat YYYY-MM-DD
+        section Phase
+        API: endpoint :a, 2026-09-30, 1d
+        ```
+
+        ## 重复
+
+        ```mermaid
+        sequenceDiagram
+        participant A as "First\\nSecond"
+        A->>A: hello
+        ```
+
+        ## 重复
+
+        End
+        """
+        preview.update(source: source, url: nil, dark: false)
+        try await waitFor("document.querySelectorAll('.mermaid-diagram svg').length === 2", in: preview.web)
+        let labels = try await evaluate("Array.from(document.querySelectorAll('.toc-link'), e => e.textContent)", in: preview.web)
+        XCTAssertEqual(labels as? [String], ["标题 code", "重复", "重复"])
+        _ = try await evaluate("document.querySelector('.toc-toggle').click()", in: preview.web)
+        let expanded = try await evaluate("document.querySelector('.toc-toggle').getAttribute('aria-expanded')", in: preview.web)
+        XCTAssertEqual(expanded as? String, "true")
+        _ = try await evaluate("document.querySelector('.preview-source-toggle').click()", in: preview.web)
+        try await waitFor("document.querySelector('.source-lines') !== null", in: preview.web)
+        _ = try await evaluate("document.querySelector('.preview-source-toggle').click()", in: preview.web)
+        try await waitFor("document.querySelectorAll('.mermaid-diagram svg').length === 2", in: preview.web)
+        let restored = try await evaluate("document.querySelector('.toc-nav.visible') !== null && !document.querySelector('.toc-nav').hidden", in: preview.web)
+        XCTAssertEqual(restored as? Bool, true)
+        _ = try await evaluate("document.querySelectorAll('.toc-link')[2].click()", in: preview.web)
+        try await waitFor("document.querySelector('.toc-link.active')?.textContent === '重复'", in: preview.web)
+    }
+
     func testResourceHandlerRejectsTraversalAndSymlinkEscape() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -187,6 +255,7 @@ final class MarkdownPreviewIntegrationTests: XCTestCase {
         let outside = root.deletingLastPathComponent().appendingPathComponent("\(root.lastPathComponent)-secret.js")
         try Data("secret".utf8).write(to: outside)
         defer { try? FileManager.default.removeItem(at: outside) }
+        try Data("<!doctype html><title>test</title>".utf8).write(to: root.appendingPathComponent("index.html"))
         let handler = MarkdownPreviewResources(rootDirectory: root)
         XCTAssertNotNil(handler.resourceURL(for: MarkdownPreviewResources.indexURL))
         for path in ["mdpreview://bundle/../secret.js", "mdpreview://bundle/%2e%2e/secret.js", "mdpreview://bundle/escape/\(outside.lastPathComponent)", "mdpreview://other/index.html", "file:///index.html", "mdpreview://bundle/passwords.key"] {

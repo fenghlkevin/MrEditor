@@ -1,4 +1,4 @@
-import hljs from 'highlight.js/lib/core';
+import hljs from './languages';
 import { loadAll, JSON_SCHEMA } from 'js-yaml';
 import DOMPurify from 'dompurify';
 

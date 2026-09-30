@@ -647,3 +647,5 @@
 "workspace.remoteHint" = "サーバーに接続してリモートファイルやログを開きます。";
 
 "markdown.basicPreview" = "基本プレビュー — 拡張レンダラーを読み込めませんでした。";
+
+"about.licenses" = "オープンソースライセンス";

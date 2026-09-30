@@ -1,161 +1,172 @@
-// FluxMarkdown-derived preview integration. See ../UPSTREAM.md and ../LICENSE.
+// SPDX-License-Identifier: MIT
 import 'github-markdown-css/github-markdown.css';
 import 'katex/dist/katex.min.css';
-import './styles/highlight-adaptive.css';
-import './styles/callouts.css';
-import './styles/table-of-contents.css';
+import 'highlight.js/styles/github.css';
+import 'highlight.js/styles/github-dark.css';
+import 'markdown-it-github-alerts/styles/github-base.css';
+import './styles/components.css';
 import './styles/preview.css';
 import DOMPurify from 'dompurify';
+import {createParser, localImageURL} from './parser';
+import {splitMetadata, metadataView} from './metadata';
+import {labelBreaks, ganttLabels} from './diagrams';
+import {HeadingNavigation} from './navigation';
 import {structured, tableView, codeView, safeMarkup} from './formats';
 import {installSearch} from './search';
-import {
-    createMarkdownParser, extractFrontMatter, renderFrontMatterHtml, resolveImageSource,
-    preprocessMermaidGanttTaskColons, preprocessMermaidNewlines,
-} from './markdown';
-import { extractHeadings, buildHeadingTree } from './outline';
-import { TableOfContents } from './table-of-contents';
 
-const md = createMarkdownParser();
-const output = document.getElementById('markdown-preview')!;
-const toc = new TableOfContents('toc-container');
-const search = installSearch(output);
-let latestSource = '';
-let sourceMode = false;
-const sourceToggle = document.createElement('button');
-sourceToggle.textContent = '‹›';
-sourceToggle.title = '查看源码';
-sourceToggle.setAttribute('aria-label', '查看源码');
-sourceToggle.className = 'preview-source-toggle';
-search.bar.append(sourceToggle);
-sourceToggle.onclick = () => { sourceMode = !sourceMode; sourceToggle.title = sourceMode ? '返回预览' : '查看源码'; sourceToggle.setAttribute('aria-label', sourceToggle.title); sourceToggle.setAttribute('aria-pressed', String(sourceMode)); if (latestOptions) window.mrPreview.render(latestSource, latestOptions); };
-let latestOptions: {dark:boolean;revision:number;language:string;format?:string;syntax?:string} | undefined;
-let generation = 0;
-let pending: Promise<unknown> = Promise.resolve();
-let katexLoaded = false;
-let mermaid: typeof import('mermaid')['default'] | undefined;
+type Options = Parameters<Window['mrPreview']['render']>[1];
+const content = document.getElementById('markdown-preview')!;
+const search = installSearch(content);
+const navigation = new HeadingNavigation(document.getElementById('toc-container')!, content);
+const parser = createParser();
+let mathReady = false;
+let diagramEngine: typeof import('mermaid')['default'] | undefined;
+let serial: Promise<unknown> = Promise.resolve();
+let version = 0;
+let sourceView = false;
+let current: {source: string; options: Options} | undefined;
 
-// Sanitize before any document-provided HTML enters the live DOM. CSP also
-// prevents document scripts, remote requests and embedded frames.
-export function sanitizeDocument(html: string): string {
+const sourceButton = document.createElement('button');
+sourceButton.className = 'preview-source-toggle';
+sourceButton.textContent = '‹›';
+sourceButton.type = 'button';
+search.bar.append(sourceButton);
+sourceButton.onclick = () => {
+    sourceView = !sourceView;
+    if (current) void window.mrPreview.render(current.source, current.options);
+};
+
+function updateControls(options: Options): void {
+    const chinese = options.language.startsWith('zh');
+    const japanese = options.language.startsWith('ja');
+    const label = sourceView ? (chinese ? '返回预览' : japanese ? 'プレビュー' : 'Show preview') :
+        (chinese ? '查看源码' : japanese ? 'ソースを表示' : 'Show source');
+    sourceButton.title = label;
+    sourceButton.setAttribute('aria-label', label);
+    sourceButton.setAttribute('aria-pressed', String(sourceView));
+    document.documentElement.lang = options.language;
+    document.documentElement.dataset.theme = options.dark ? 'dark' : 'light';
+}
+
+function cleanHTML(html: string): string {
     return DOMPurify.sanitize(html, {
-        ADD_URI_SAFE_ATTR: ['data-source-line', 'data-source-line-end'],
-        ADD_ATTR: ['target'],
-        ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|mdasset):|[^a-z]|[a-z+.-]+(?:[^a-z+.:\-]|$))/i,
         FORBID_TAGS: ['style', 'link', 'meta', 'base', 'iframe', 'object', 'embed', 'form', 'button', 'textarea', 'select'],
         FORBID_ATTR: ['srcset', 'autofocus'],
     });
 }
 
-async function render(source: string, options: { dark: boolean; revision: number; language: string; format?: string; syntax?: string }, request: number) {
-    if (request !== generation) return false;
-    latestSource = source; latestOptions = options;
-    document.documentElement.dataset.theme = options.dark ? 'dark' : 'light';
-    const format = options.format ?? 'markdown';
-    if(sourceMode || !['markdown','mermaid'].includes(format)) {
-        const root = sourceMode ? codeView(source, options.syntax ?? 'text') :
-            format === 'json' || format === 'yaml' ? structured(source, format === 'yaml') :
-            format === 'csv' || format === 'tsv' ? tableView(source, format === 'csv' ? ',' : '\t') :
-            format === 'html' || format === 'svg' ? safeMarkup(source, format === 'svg') : codeView(source, options.syntax ?? 'text');
-        if(request !== generation) return false;
-        search.clear(); output.replaceChildren(root); output.dataset.revision=String(options.revision); toc.render([]); search.refresh(); return true;
-    }
-    const { yaml, body } = extractFrontMatter(format === 'mermaid' ? '````````mermaid\n' + source + '\n````````' : source);
-    if (!katexLoaded && body.includes('$')) {
-        const { default: katex } = await import('@iktakahiro/markdown-it-katex');
-        md.use(katex, { throwOnError: false, trust: false, maxExpand: 1000 });
-        katexLoaded = true;
-    }
-    if (request !== generation) return false;
-    const tokens = md.parse(body, {});
-    const headings = buildHeadingTree(extractHeadings(tokens));
-    const root = document.createElement('div');
-    root.innerHTML = sanitizeDocument((yaml ? renderFrontMatterHtml(yaml) : '') + md.renderer.render(tokens, md.options, {}));
-    root.querySelectorAll('img').forEach(img => {
-        const src = img.getAttribute('src') || '';
-        // Markdown images have already been rewritten; raw HTML images have not.
-        const resolved = src.startsWith('mdasset://document/') ? src : resolveImageSource(src);
-        if (resolved) img.setAttribute('src', resolved.startsWith('mdasset:') ? resolved.split('?')[0] + `?revision=${options.revision}` : resolved);
-        else img.removeAttribute('src');
-        img.loading = 'lazy';
-        img.addEventListener('error', () => img.classList.add('image-load-failed'));
-    });
-
-    const diagrams = root.querySelectorAll<HTMLElement>('pre code.language-mermaid');
-    if (diagrams.length) {
-        mermaid ??= (await import('mermaid')).default;
-        if (request !== generation) return false;
-        mermaid.initialize({
-            startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true,
-            theme: options.dark ? 'dark' : 'default', htmlLabels: false,
-            flowchart: { htmlLabels: false }, maxTextSize: 50000, maxEdges: 500,
-        });
-        for (let index = 0; index < diagrams.length; index++) {
-            if (request !== generation) return false;
-            const block = diagrams[index];
-            const diagram = document.createElement('div');
-            diagram.className = 'mermaid-diagram';
-            const code = block.textContent || '';
-            try {
-                const normalized = preprocessMermaidNewlines(preprocessMermaidGanttTaskColons(code));
-                const { svg } = await mermaid.render(`mr-diagram-${request}-${index}`, normalized);
-                diagram.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true } });
-            } catch (error) {
-                const details = document.createElement('details');
-                details.open = true;
-                const summary = document.createElement('summary');
-                summary.textContent = options.language.startsWith('zh') ? 'Mermaid 图表语法错误' : 'Mermaid syntax error';
-                const pre = document.createElement('pre');
-                pre.textContent = `${String(error)}\n\n${code}`;
-                details.append(summary, pre);
-                diagram.append(details);
-            }
-            block.parentElement?.replaceWith(diagram);
+function rewriteImages(root: HTMLElement, revision: number): void {
+    for (const image of root.querySelectorAll('img')) {
+        const path = localImageURL(image.getAttribute('src') ?? '');
+        image.removeAttribute('src');
+        if (path) {
+            if (path.startsWith('mdasset:')) {
+                const url = new URL(path); url.searchParams.set('revision', String(revision));
+                image.src = url.href;
+            } else image.src = path;
         }
+        image.loading = 'lazy';
+        image.onerror = () => image.classList.add('image-load-failed');
     }
-    if (request !== generation) return false;
-    document.documentElement.dataset.theme = options.dark ? 'dark' : 'light';
-    document.documentElement.lang = options.language;
-    search.clear();
-    output.replaceChildren(...root.childNodes);
-    search.refresh();
-    output.dataset.revision = String(options.revision);
-    toc.render(headings);
-    toc.observeHeadings();
-    const chinese = options.language.startsWith('zh');
-    const toggle = document.querySelector('.toc-toggle');
-    toggle?.setAttribute('aria-label', chinese ? '显示或隐藏目录' : 'Toggle contents');
-    toggle?.setAttribute('title', chinese ? '目录' : 'Contents');
-    const title = document.querySelector('.toc-title');
-    if (title) title.textContent = chinese ? '目录' : 'Contents';
-    await document.fonts.ready;
-    return request === generation;
+}
+
+async function renderDiagrams(root: HTMLElement, options: Options, ticket: number): Promise<void> {
+    const blocks = root.querySelectorAll<HTMLElement>('code.language-mermaid');
+    if (!blocks.length) return;
+    diagramEngine ??= (await import('mermaid')).default;
+    if (ticket !== version) return;
+    diagramEngine.initialize({startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true,
+        theme: options.dark ? 'dark' : 'default', htmlLabels: false,
+        flowchart: {htmlLabels: false}, maxTextSize: 50000, maxEdges: 500});
+    let index = 0;
+    for (const block of blocks) {
+        if (ticket !== version) return;
+        const view = document.createElement('div'); view.className = 'mermaid-diagram';
+        const source = block.textContent ?? '';
+        try {
+            const rendered = await diagramEngine.render(`preview-${ticket}-${++index}`, labelBreaks(ganttLabels(source)));
+            view.innerHTML = DOMPurify.sanitize(rendered.svg, {USE_PROFILES: {svg: true, svgFilters: true}});
+        } catch (error) {
+            const details = document.createElement('details'); details.open = true;
+            const summary = document.createElement('summary');
+            summary.textContent = options.language.startsWith('zh') ? 'Mermaid 图表语法错误' : 'Mermaid syntax error';
+            const pre = document.createElement('pre'); pre.textContent = `${error}\n\n${source}`;
+            details.append(summary, pre); view.append(details);
+        }
+        block.closest('pre')?.replaceWith(view);
+    }
+}
+
+async function createDocument(source: string, options: Options, ticket: number): Promise<HTMLElement> {
+    const format = options.format ?? 'markdown';
+    if (sourceView) return codeView(source, options.syntax ?? 'text');
+    switch (format) {
+        case 'json': return structured(source, false);
+        case 'yaml': return structured(source, true);
+        case 'csv': return tableView(source, ',');
+        case 'tsv': return tableView(source, '\t');
+        case 'html': return safeMarkup(source, false);
+        case 'svg': return safeMarkup(source, true);
+        case 'markdown': case 'mermaid': break;
+        default: return codeView(source, options.syntax ?? 'text');
+    }
+    const root = document.createElement('div');
+    if (format === 'mermaid') {
+        const pre = document.createElement('pre'); const code = document.createElement('code');
+        code.className = 'language-mermaid'; code.textContent = source;
+        pre.append(code); root.append(pre);
+    } else {
+        const {yaml, body} = splitMetadata(source);
+        if (!mathReady && body.includes('$')) {
+            const math = await import('@iktakahiro/markdown-it-katex');
+            parser.use(math.default, {trust: false, throwOnError: false, maxExpand: 1000});
+            mathReady = true;
+        }
+        if (ticket !== version) return root;
+        root.innerHTML = cleanHTML(parser.render(body));
+        if (yaml !== null && yaml !== '') root.prepend(metadataView(yaml));
+        rewriteImages(root, options.revision);
+    }
+    await renderDiagrams(root, options, ticket);
+    return root;
 }
 
 window.mrPreview = {
     render(source, options) {
-        const request = ++generation;
-        // Mermaid and markdown-it plugin state are shared. Serialize rendering,
-        // skip superseded requests, and commit each document atomically.
-        const result = pending.then(() => render(source, options, request));
-        pending = result.catch(() => undefined);
-        return result;
+        current = {source, options};
+        const ticket = ++version;
+        const task = serial.then(async () => {
+            if (ticket !== version) return false;
+            updateControls(options);
+            const root = await createDocument(source, options, ticket);
+            if (ticket !== version) return false;
+            search.clear();
+            // Keep interactive format wrappers, but preserve Markdown block layout.
+            if (!sourceView && ['markdown', 'mermaid'].includes(options.format ?? 'markdown')) content.replaceChildren(...root.childNodes);
+            else content.replaceChildren(root);
+            navigation.refresh(options.language, !sourceView && (options.format ?? 'markdown') === 'markdown');
+            search.refresh();
+            await document.fonts.ready;
+            if (ticket !== version) return false;
+            content.dataset.revision = String(options.revision);
+            return true;
+        });
+        serial = task.catch(() => undefined);
+        return task;
     },
-    cancel() { generation++; },
+    cancel() { version++; },
 };
 
-document.addEventListener('click', event => {
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    const anchor = target.closest('a');
-    const href = anchor?.getAttribute('href');
-    if (!href?.startsWith('#')) return;
+content.addEventListener('click', event => {
+    const anchor = (event.target as Element).closest('a');
+    const target = anchor?.getAttribute('href');
+    if (!target?.startsWith('#')) return;
     event.preventDefault();
     try {
-        const id = decodeURIComponent(href.slice(1));
-        // Scope lookup to document content, so raw HTML cannot target app UI.
-        const element = Array.from(output.querySelectorAll('[id]')).find(node => node.id === id);
-        element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } catch { /* Malformed document anchors are inert. */ }
+        const id = decodeURIComponent(target.substring(1));
+        Array.from(content.querySelectorAll<HTMLElement>('[id]')).find(node =>
+            node.id === id || node.id === encodeURIComponent(id))
+            ?.scrollIntoView({behavior: 'smooth', block: 'start'});
+    } catch { /* Invalid percent escapes do not navigate out of the document. */ }
 });
-
 window.webkit?.messageHandlers?.markdownRenderer?.postMessage('ready');

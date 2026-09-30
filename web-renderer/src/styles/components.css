@@ -1,0 +1,33 @@
+/* SPDX-License-Identifier: MIT — MrEditor preview controls and metadata. */
+:root {
+    --panel-bg: #fff; --panel-border: #d0d7de; --panel-muted: #57606a;
+    --panel-hover: #f6f8fa; --panel-selected: #ddf4ff; --panel-link: #0969da;
+    --color-note: #0969da; --color-tip: #1a7f37; --color-important: #8250df;
+    --color-warning: #9a6700; --color-caution: #cf222e;
+}
+:root[data-theme=dark] {
+    --panel-bg: #0d1117; --panel-border: #30363d; --panel-muted: #8b949e;
+    --panel-hover: #161b22; --panel-selected: #1c2128; --panel-link: #58a6ff;
+    --color-note: #58a6ff; --color-tip: #3fb950; --color-important: #ab7df8;
+    --color-warning: #d29922; --color-caution: #f85149;
+}
+/* MrEditor contents palette: system colors and uniform, wrapping rows.
+   Hierarchy is expressed by indentation, never level-specific font rules. */
+#toc-container { position: fixed; z-index: 100; font: menu; }
+#toc-container[hidden], .toc-nav[hidden] { display: none; }
+.toc-toggle { position: fixed; appearance: auto; color: ButtonText; background: ButtonFace; border: 1px solid GrayText; border-radius: 5px; cursor: pointer; }
+.toc-nav { position: fixed; box-sizing: border-box; overflow: auto; padding: 10px; color: CanvasText; background: Canvas; border: 1px solid GrayText; border-radius: 5px; box-shadow: 0 6px 20px #0003; }
+.toc-title { font: inherit; padding: 6px 10px 10px; border-bottom: 1px solid GrayText; }
+.toc-list { display: grid; gap: 1px; list-style: none; padding: 6px 0; margin: 0; }
+.toc-link { display: block; box-sizing: border-box; padding-block: 7px; padding-inline: calc(10px + var(--heading-indent, 0px)) 10px; color: inherit; text-decoration: none; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; border-inline-start: 3px solid transparent; }
+.toc-link:hover { text-decoration: underline; }
+.toc-link.active { color: HighlightText; background: Highlight; border-inline-start-color: currentColor; }
+.toc-toggle:focus-visible, .toc-link:focus-visible { outline: 2px solid Highlight; outline-offset: -2px; }
+.markdown-body :is(h1,h2,h3,h4,h5,h6) { scroll-margin-top: 62px; }
+.markdown-body .yaml-frontmatter { font-size: .9em; border: 1px solid var(--panel-border); border-radius: 6px; overflow: hidden; width: 100%; margin-bottom: 24px; }
+.markdown-body .yaml-frontmatter :is(th,td) { text-align: left; vertical-align: top; border-color: var(--panel-border); }
+.markdown-body .yaml-frontmatter th { color: var(--panel-muted); background: var(--panel-hover); white-space: nowrap; }
+@media print { pre, code { break-inside: avoid; } }
+/* Match document-sized metadata rather than stretching its outer border. */
+.markdown-body .yaml-frontmatter { width: max-content; max-width: 100%; }
+:root[data-theme=light] .markdown-body pre.hljs { background: var(--bgColor-muted); }

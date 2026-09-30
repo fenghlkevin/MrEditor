@@ -1,6 +1,6 @@
 ---
 title: MrEditor Markdown 增强预览
-renderer: FluxMarkdown
+renderer: MrEditor
 mode: 离线
 ---
 

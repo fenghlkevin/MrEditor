@@ -1,7 +1,7 @@
 # Markdown preview integration
 
-The first preview upgrade directly adapts FluxMarkdown code into MrEditor's
-existing split editor. It supports CommonMark/GFM, highlighted fenced code,
+MrEditor's preview uses an application-owned integration of independently
+licensed rendering libraries in the existing split editor. It supports CommonMark/GFM, highlighted fenced code,
 KaTeX inline/display math, Mermaid diagrams, task lists, tables, footnotes,
 GitHub Alerts, YAML frontmatter, emoji, marked text, subscript/superscript and
 a clickable heading outline. The outline tracks headings and stays open when
@@ -42,7 +42,9 @@ list was already open during installation.
 
 ## Implementation
 
-- `web-renderer/src/markdown.ts` contains the adapted upstream parser.
+- `web-renderer/src/parser.ts` configures the parser through public plugin APIs.
+- `metadata.ts` builds bounded YAML metadata DOM; `navigation.ts` reads the
+  sanitized heading DOM and tracks scrolling without a separate token tree.
 - `web-renderer/src/index.ts` sanitizes and renders each document, loads math
   and diagrams on demand and discards superseded requests.
 - `MarkdownPreviewView.swift` retains one WKWebView shell, debounces editing,
@@ -78,10 +80,10 @@ network requests and HTML sanitization. They write a preview snapshot to
 
 ## Provenance
 
-See [upstream revision, license and adaptations](../web-renderer/UPSTREAM.md).
-The original MIT license remains attached to original MrEditor code; this
-combined variant additionally contains GPL-3.0 components. Bundled dependency
-notices are in `MarkdownPreview/ThirdPartyNotices.txt` inside the resource bundle.
+See [implementation provenance](../web-renderer/UPSTREAM.md). The original MIT
+license is retained. Dependency notices and the selected-license inventory are
+in `MarkdownPreview/ThirdPartyNotices.txt` and `dependency-licenses.json` inside
+the resource bundle. The generator rejects unreviewed runtime licenses.
 
 ## Additional document formats and search
 
@@ -127,3 +129,20 @@ preferences. When off, repeated mouse clicks in the preview content are consumed
 before Quick Look can open the document; this also suppresses double-click text
 selection there. Single-click controls and the system Open With button remain
 available. This preference applies to MrEditor-provided previews only.
+
+## Replacement validation (2026-09-30)
+
+The replacement is checked against the installed predecessor using the same
+WebKit document at 850px light/dark and 390px light widths, with contents both
+closed and open. `PreviewAppearanceTests` writes PNGs and layout/color metrics
+to `/private/tmp/mreditor-preview-comparison/`. Set `MREDITOR_PREVIEW_REFERENCE`
+to a predecessor's `MarkdownPreview` directory to include reference captures.
+The contents button is now a locally drawn stroked icon, and the contents panel
+uses the app system font; these controls need not be pixel-identical.
+
+Validation covers 27 frontend cases and 41 native cases, including syntax,
+formula/font loading, flowchart/Gantt/sequence rendering, duplicate heading
+links, contents persistence, source switching, all preview formats, search,
+YAML cycles, unsafe markup, local image containment and resource traversal.
+The resource verifier additionally rejects extra stale files and altered hashes.
+No new export formats or changes to Finder provider selection are included.

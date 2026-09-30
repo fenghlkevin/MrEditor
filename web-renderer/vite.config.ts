@@ -8,6 +8,11 @@ export default defineConfig({
   }],
   css: { postcss: { plugins: [{
     postcssPlugin: 'mreditor-explicit-theme',
+    Rule(rule: any) {
+      const file = rule.source?.input.file?.replaceAll('\\', '/') ?? '';
+      const theme = file.endsWith('/highlight.js/styles/github-dark.css') ? 'dark' : file.endsWith('/highlight.js/styles/github.css') ? 'light' : null;
+      if (theme) rule.selectors = rule.selectors.map((selector: string) => `[data-theme="${theme}"] ${selector}`);
+    },
     AtRule(rule: any) {
       const match = rule.name === 'media' && rule.params.match(/^\(prefers-color-scheme: (dark|light)\)$/);
       if (!match) return;

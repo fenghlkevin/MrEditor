@@ -647,3 +647,5 @@
 "workspace.remoteHint" = "Connect to a server to open remote files or view logs.";
 
 "markdown.basicPreview" = "Basic preview — enhanced renderer unavailable.";
+
+"about.licenses" = "Open-source licenses";

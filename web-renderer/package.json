@@ -1,7 +1,7 @@
 {
   "name": "mreditor-markdown-preview",
   "version": "1.0.0",
-  "description": "MrEditor Markdown preview adapted from FluxMarkdown",
+  "description": "Offline MrEditor document preview",
   "main": "index.js",
   "scripts": {
     "build": "vite build",
@@ -35,5 +35,5 @@
     "jsdom": "^26.1.0"
   },
   "private": true,
-  "license": "GPL-3.0"
+  "license": "MIT"
 }

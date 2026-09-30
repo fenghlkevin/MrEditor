@@ -1,8 +1,8 @@
 // swift-tools-version: 5.9
 import PackageDescription
 
-// Original core: MIT. This variant includes GPL-3.0 FluxMarkdown preview code.
-// Review web-renderer/UPSTREAM.md before incorporating this variant into Pro.
+// MrEditor core and preview integration: MIT.
+// Third-party renderer licenses are collected with the bundled resources.
 // 無料コアと Pro（別リポ）を1本の依存方向で繋ぐための構成。
 //
 //   MrEditorCore (library) ── 本体のほぼ全部。UI もエンジンもここ。

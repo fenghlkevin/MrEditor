@@ -107,6 +107,7 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
         setupContent()
         setupToolbar()
+        fitWindowToScreen()
         NotificationCenter.default.addObserver(self, selector: #selector(lineWrapChanged),
                                                name: .mrEditorLineWrapChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(fontChanged),
@@ -1850,6 +1851,33 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
     var hasMovedOverlays: Bool { draggableOverlays.contains { $0.offset != .zero } }
 
     // MARK: - NSWindowDelegate
+
+    /// Keep restored frames usable after display/resolution changes. Never use
+    /// document fitting width as the window's zoom target.
+    static func boundedWindowFrame(_ frame: NSRect, visible: NSRect) -> NSRect {
+        var result = frame
+        result.size.width = min(result.width, visible.width)
+        result.size.height = min(result.height, visible.height)
+        result.origin.x = min(max(result.minX, visible.minX), visible.maxX - result.width)
+        result.origin.y = min(max(result.minY, visible.minY), visible.maxY - result.height)
+        return result
+    }
+
+    private func fitWindowToScreen() {
+        guard let window, !window.styleMask.contains(.fullScreen),
+              let screen = window.screen ?? NSScreen.main else { return }
+        let visible = screen.visibleFrame
+        window.minSize = NSSize(width: min(960, visible.width), height: min(600, visible.height))
+        let frame = Self.boundedWindowFrame(window.frame, visible: visible)
+        if frame != window.frame { window.setFrame(frame, display: true) }
+    }
+
+    public func windowWillUseStandardFrame(_ window: NSWindow, defaultFrame: NSRect) -> NSRect {
+        (window.screen ?? NSScreen.main)?.visibleFrame ?? defaultFrame
+    }
+
+    public func windowDidChangeScreen(_ notification: Notification) { fitWindowToScreen() }
+    public func windowDidExitFullScreen(_ notification: Notification) { fitWindowToScreen() }
 
     /// 窓の大きさが変わったら、小窓を内側へ寄せ直す。
     /// **縮めたときに画面の外へ残ると、掴めなくなって戻せない。**

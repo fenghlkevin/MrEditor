@@ -167,4 +167,4 @@ cat /path/to/app.log | mreditor
 
 原始 MrEditor 代码采用 [MIT](LICENSE)，© 2026 TABATA Hitoshi。
 
-本分支的增强预览包含 FluxMarkdown 衍生的 [GPL-3.0 组件](web-renderer/LICENSE)，© 2024–2026 xykong，因此不能将组合构建描述为仅使用 MIT 许可。来源、固定版本与改动见 [UPSTREAM.md](web-renderer/UPSTREAM.md)；依赖声明随预览资源中的 `ThirdPartyNotices.txt` 一起打包。
+增强预览使用 MrEditor 自有集成实现和允许商业分发的第三方组件。原作者 MIT 声明及依赖许可全文随 `ThirdPartyNotices.txt` 打包；DOMPurify 选择 Apache-2.0 许可。实现来源及历史说明见 [UPSTREAM.md](web-renderer/UPSTREAM.md)。

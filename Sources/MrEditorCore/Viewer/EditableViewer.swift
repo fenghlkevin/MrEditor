@@ -36,8 +36,10 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate, NSTextStor
         let visible = supportsMarkdownPreview && previewEnabled
         if visible && markdownPreview == nil {
             let preview = MarkdownPreviewView(frame: .zero)
+            preview.usesSharedToolbar = true
+            let toolbar = preview.toolbar
             let divider = MarkdownDivider(frame: .zero)
-            for view in [preview, divider] { view.translatesAutoresizingMaskIntoConstraints = false; addSubview(view) }
+            for view in [preview, divider, toolbar] { view.translatesAutoresizingMaskIntoConstraints = false; addSubview(view) }
             markdownPreview = preview; markdownDivider = divider
             preview.onScroll = { [weak self] fraction in
                 guard let self, self.markdownPreviewVisible else { return }
@@ -49,14 +51,25 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate, NSTextStor
             }
             preview.onClose = { [weak self] in self?.toggleMarkdownPreview() }
             markdownConstraints = [
+                toolbar.topAnchor.constraint(equalTo: topAnchor),
+                toolbar.leadingAnchor.constraint(equalTo: leadingAnchor),
+                toolbar.trailingAnchor.constraint(equalTo: trailingAnchor),
+                toolbar.heightAnchor.constraint(equalToConstant: 46),
                 scrollView.trailingAnchor.constraint(equalTo: divider.leadingAnchor),
                 divider.widthAnchor.constraint(equalToConstant: 6),
-                divider.topAnchor.constraint(equalTo: topAnchor), divider.bottomAnchor.constraint(equalTo: bottomAnchor),
+                divider.topAnchor.constraint(equalTo: toolbar.bottomAnchor), divider.bottomAnchor.constraint(equalTo: bottomAnchor),
                 divider.trailingAnchor.constraint(equalTo: preview.leadingAnchor),
-                preview.topAnchor.constraint(equalTo: topAnchor), preview.bottomAnchor.constraint(equalTo: bottomAnchor),
+                preview.topAnchor.constraint(equalTo: toolbar.bottomAnchor), preview.bottomAnchor.constraint(equalTo: bottomAnchor),
                 preview.trailingAnchor.constraint(equalTo: trailingAnchor)
             ]
             markdownWidth = preview.widthAnchor.constraint(equalTo: widthAnchor, multiplier: 0.5)
+            divider.toolTip = "拖动调整宽度，双击恢复左右等宽"
+            divider.onReset = { [weak self, weak preview] in
+                guard let self, let preview else { return }
+                self.markdownWidth?.isActive = false
+                self.markdownWidth = preview.widthAnchor.constraint(equalTo: self.widthAnchor, multiplier: 0.5)
+                self.markdownWidth?.isActive = true
+            }
             divider.onDrag = { [weak self, weak preview] x in
                 guard let self, let preview, self.bounds.width > 0 else { return }
                 self.markdownWidth?.isActive = false
@@ -65,6 +78,11 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate, NSTextStor
             }
         }
         markdownPreview?.isHidden = !visible; markdownDivider?.isHidden = !visible
+        markdownPreview?.toolbar.isHidden = !visible
+        for constraint in [scrollTopToContainer, rulerTopToContainer, headerTopToContainer] {
+            constraint?.constant = visible ? 46 : 0
+        }
+        queryTopConstraint?.constant = visible ? 52 : 6
         if visible {
             editorTrailing.isActive = false
             NSLayoutConstraint.activate(markdownConstraints); markdownWidth?.isActive = true
@@ -90,6 +108,7 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate, NSTextStor
     /// 本文が変わったら捨てて、次に必要になったときに数え直す。
     private var lineIndexCache: LineStartIndex?
     /// クエリバー表示/非表示で本文の上端を切り替える（片方だけ有効化）。
+    private var queryTopConstraint: NSLayoutConstraint!
     private var scrollTopToContainer: NSLayoutConstraint!
     private var scrollTopToBar: NSLayoutConstraint!
 
@@ -313,8 +332,9 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate, NSTextStor
         rulerTopToContainer = columnRuler.topAnchor.constraint(equalTo: topAnchor)
         rulerTopToBar = columnRuler.topAnchor.constraint(equalTo: jsonQueryBar.bottomAnchor)
         editorTrailing = scrollView.trailingAnchor.constraint(equalTo: trailingAnchor)
+        queryTopConstraint = jsonQueryBar.topAnchor.constraint(equalTo: topAnchor, constant: 6)
         NSLayoutConstraint.activate([
-            jsonQueryBar.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            queryTopConstraint,
             jsonQueryBar.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             jsonQueryBar.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor, constant: -8),
             jsonQueryBar.heightAnchor.constraint(equalToConstant: JsonQueryBar.height),

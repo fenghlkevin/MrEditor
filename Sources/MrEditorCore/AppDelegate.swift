@@ -156,6 +156,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 .foregroundColor: NSColor.secondaryLabelColor,
                 .paragraphStyle: paragraph,
             ]))
+        if let notices = MarkdownPreviewResources.bundledRoot?.appendingPathComponent("ThirdPartyNotices.txt") {
+            credits.append(NSAttributedString(string: "\n\n" + L("about.licenses"), attributes: [
+                .link: notices, .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+                .paragraphStyle: paragraph,
+            ]))
+        }
         return credits
     }
 

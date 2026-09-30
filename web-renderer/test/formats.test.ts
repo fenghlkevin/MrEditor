@@ -2,7 +2,7 @@
 import {describe,it,expect} from 'vitest';
 import {parseDelimited, structured, tableView, safeMarkup, codeView} from '../src/formats';
 import {installSearch} from '../src/search';
-import '../src/markdown';
+import '../src/languages';
 
 describe('document formats',()=>{
  it('parses quoted delimiters, newlines, escapes and CRLF',()=>{expect(parseDelimited('a,b\r\n"hello, world","a\n""b"""\r\n',',').rows).toEqual([['a','b'],['hello, world','a\n"b"']]);});

@@ -2,7 +2,7 @@ import AppKit
 import WebKit
 import UniformTypeIdentifiers
 
-/// Bundled FluxMarkdown-derived renderer. Document HTML is sanitized and CSP
+/// Bundled MrEditor document renderer. Document HTML is sanitized and CSP
 /// prevents document scripts and network access; native images are directory-scoped.
 final class MarkdownPreviewView: NSView, WKNavigationDelegate {
     private let scrollBridge = MarkdownScrollBridge()
@@ -11,6 +11,20 @@ final class MarkdownPreviewView: NSView, WKNavigationDelegate {
     private let rendererBridge = MarkdownRendererBridge()
     var onScroll: ((Double) -> Void)?
     var onClose: (() -> Void)?
+    var usesSharedToolbar = false { didSet { closeButton.isHidden = usesSharedToolbar } }
+    lazy var toolbar = PreviewToolbar()
+    private lazy var closeButton = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: L("markdown.closePreview"))!, target: self, action: #selector(closePreview))
+
+    func toolbarAction(_ action: String, value: String = "") {
+        guard ready else { return }
+        web.callAsyncJavaScript("""
+        const field = document.querySelector('.preview-search input');
+        if (action === 'search') { field.value = value; field.dispatchEvent(new Event('input')); }
+        else if (action === 'previous' || action === 'next') {
+            document.querySelectorAll('.preview-search > button')[action === 'previous' ? 0 : 1]?.click();
+        } else document.querySelector(action === 'source' ? '.preview-source-toggle' : '.toc-toggle')?.click();
+        """, arguments: ["action": action, "value": value], in: nil, in: .page, completionHandler: nil)
+    }
     private var ready = false
     private var loading = false
     private var fallback = false
@@ -31,6 +45,7 @@ final class MarkdownPreviewView: NSView, WKNavigationDelegate {
         rendererBridge.onReady = { [weak self] in
             guard let self, !self.fallback else { return }
             self.ready = true; self.loading = false; self.rendererError = nil
+            if self.usesSharedToolbar { self.installSharedControls() }
             self.renderLatest()
         }
         configuration.userContentController.add(rendererBridge, name: "markdownRenderer")
@@ -60,6 +75,14 @@ final class MarkdownPreviewView: NSView, WKNavigationDelegate {
         })();
         """
         configuration.userContentController.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .defaultClient))
+        // This inset belongs only to the editor split pane; Quick Look has its
+        // own native controls and uses the renderer's default toolbar spacing.
+        let toolbarInset = """
+        const inset = document.createElement('style');
+        inset.textContent = '.preview-search { padding-right: 90px; } .toc-toggle { right: 48px; }';
+        document.head.append(inset);
+        """
+        configuration.userContentController.addUserScript(WKUserScript(source: toolbarInset, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .defaultClient))
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = self
         view.allowsMagnification = true
@@ -68,23 +91,52 @@ final class MarkdownPreviewView: NSView, WKNavigationDelegate {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        let title = NSTextField(labelWithString: L("markdown.preview"))
-        title.font = .systemFont(ofSize: 12, weight: .medium)
-        title.textColor = .secondaryLabelColor
-        let close = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: L("markdown.closePreview"))!, target: self, action: #selector(closePreview))
+        let close = closeButton
+        toolbar.onAction = { [weak self] action, value in self?.toolbarAction(action, value: value) }
+        toolbar.onClose = { [weak self] in self?.onClose?() }
+        rendererBridge.onState = { [weak self] state in
+            guard let self else { return }
+            self.toolbar.update(state)
+            if state["focus"] as? Bool == true { self.toolbar.window?.makeFirstResponder(self.toolbar.search) }
+        }
         close.isBordered = false
-        let spacer = NSView()
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let header = NSStackView(views: [title, spacer, close])
-        header.spacing = 8
-        for view in [header, web] { view.translatesAutoresizingMaskIntoConstraints = false; addSubview(view) }
+        close.contentTintColor = .secondaryLabelColor
+        close.toolTip = L("markdown.closePreview")
+        // Keep the document viewport flush with the source pane. The native close
+        // button shares the renderer toolbar row and remains available in fallback.
+        for view in [web, close] { view.translatesAutoresizingMaskIntoConstraints = false; addSubview(view) }
         NSLayoutConstraint.activate([
-            header.topAnchor.constraint(equalTo: topAnchor, constant: 8), header.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16), header.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12), header.heightAnchor.constraint(equalToConstant: 24),
-            web.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 8), web.leadingAnchor.constraint(equalTo: leadingAnchor), web.trailingAnchor.constraint(equalTo: trailingAnchor), web.bottomAnchor.constraint(equalTo: bottomAnchor)
+            web.topAnchor.constraint(equalTo: topAnchor), web.leadingAnchor.constraint(equalTo: leadingAnchor),
+            web.trailingAnchor.constraint(equalTo: trailingAnchor), web.bottomAnchor.constraint(equalTo: bottomAnchor),
+            close.topAnchor.constraint(equalTo: topAnchor, constant: 9),
+            close.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            close.widthAnchor.constraint(equalToConstant: 28), close.heightAnchor.constraint(equalToConstant: 28)
         ])
     }
     required init?(coder: NSCoder) { fatalError() }
     @objc private func closePreview() { onClose?() }
+
+    private func installSharedControls() {
+        web.evaluateJavaScript("""
+        const style = document.createElement('style');
+        style.textContent = '.preview-search,.toc-toggle{display:none!important}.markdown-body{padding-top:8px!important}.toc-nav{top:8px!important}';
+        document.head.append(style);
+        const report = () => window.webkit.messageHandlers.markdownRenderer.postMessage({
+            count: document.querySelector('.search-count')?.textContent || '',
+            source: document.querySelector('.preview-source-toggle')?.getAttribute('aria-pressed') === 'true',
+            available: !document.querySelector('#toc-container')?.hidden,
+            expanded: document.querySelector('.toc-toggle')?.getAttribute('aria-expanded') === 'true'
+        });
+        new MutationObserver(report).observe(document.body, {subtree:true,childList:true,attributes:true,attributeFilter:['aria-pressed','aria-expanded','hidden']});
+        document.addEventListener('keydown', e => {
+            if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+                e.preventDefault(); e.stopImmediatePropagation();
+                window.webkit.messageHandlers.markdownRenderer.postMessage({focus:true});
+            }
+        }, true);
+        report();
+        """, completionHandler: nil)
+    }
 
     func scroll(to fraction: Double) {
         guard fraction.isFinite else { return }
@@ -192,18 +244,20 @@ final class MarkdownPreviewView: NSView, WKNavigationDelegate {
 
 private final class MarkdownRendererBridge: NSObject, WKScriptMessageHandler {
     var onReady: (() -> Void)?
+    var onState: (([String: Any]) -> Void)?
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.frameInfo.isMainFrame, message.frameInfo.request.url == MarkdownPreviewResources.indexURL,
-              message.body as? String == "ready" else { return }
-        onReady?()
+        guard message.frameInfo.isMainFrame, message.frameInfo.request.url == MarkdownPreviewResources.indexURL else { return }
+        if message.body as? String == "ready" { onReady?() }
+        else if let state = message.body as? [String: Any] { onState?(state) }
     }
 }
 
 final class MarkdownDivider: NSView {
     var onDrag: ((CGFloat) -> Void)?
+    var onReset: (() -> Void)?
     override func resetCursorRects() { addCursorRect(bounds, cursor: .resizeLeftRight) }
     override func mouseDragged(with event: NSEvent) { if let superview { onDrag?(superview.convert(event.locationInWindow, from: nil).x) } }
-    override func mouseDown(with event: NSEvent) {}
+    override func mouseDown(with event: NSEvent) { if event.clickCount == 2 { onReset?() } }
     override func draw(_ dirtyRect: NSRect) { NSColor.separatorColor.setFill(); NSRect(x: bounds.midX, y: 0, width: 1, height: bounds.height).fill() }
 }
 

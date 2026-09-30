@@ -21,7 +21,7 @@ VERSION="${VERSION:-1.18.0}"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ICON="${ICON:-$ROOT/art/AppIcon.icns}"
-COPYRIGHT="${COPYRIGHT:-© 2026 TABATA Hitoshi. Includes GPL-3.0 FluxMarkdown components; see bundled ThirdPartyNotices.txt.}"
+COPYRIGHT="${COPYRIGHT:-© 2026 TABATA Hitoshi. Includes third-party components; see bundled ThirdPartyNotices.txt.}"
 # 共有リンクのスキーム（mreditor://theme?d=…）。
 URL_SCHEME="${URL_SCHEME:-mreditor}"
 # 更新確認の feed（GitHub Releases の API）。**既定は「無し」＝更新確認をしない。**

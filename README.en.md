@@ -167,4 +167,4 @@ cat /path/to/app.log | mreditor
 
 Original MrEditor code: [MIT](LICENSE), © 2026 TABATA Hitoshi.
 
-This branch's enhanced preview contains FluxMarkdown-derived [GPL-3.0 components](web-renderer/LICENSE), © 2024–2026 xykong. The combined build is not MIT-only. See [UPSTREAM.md](web-renderer/UPSTREAM.md) for provenance, the pinned revision, and adaptations. Dependency notices are bundled in the preview resources as `ThirdPartyNotices.txt`.
+The enhanced preview uses MrEditor's own integration with permissively licensed dependencies. Original MIT notices and dependency license texts are bundled as `ThirdPartyNotices.txt`; DOMPurify is used under Apache-2.0. See [implementation provenance](web-renderer/UPSTREAM.md).
