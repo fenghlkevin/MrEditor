@@ -7,6 +7,8 @@ final class PreviewToolbar: NSView, NSSearchFieldDelegate {
     private let count = NSTextField(labelWithString: "")
     private var source: NSButton!
     private var contents: NSButton!
+    private var editor: NSButton!
+    var onToggleEditor: (() -> Void)?
     var onAction: ((String, String) -> Void)?
     var onClose: (() -> Void)?
 
@@ -22,7 +24,8 @@ final class PreviewToolbar: NSView, NSSearchFieldDelegate {
         let next = button("chevron.down", "下一处（Enter）", "next")
         source = button("chevron.left.forwardslash.chevron.right", "切换源码", "source")
         contents = button("list.bullet", "目录", "contents")
-        let stack = NSStackView(views: [search, count, previous, next, source, contents])
+        editor = button("rectangle", "隐藏源码，仅显示预览", "editor")
+        let stack = NSStackView(views: [search, count, previous, next, source, contents, editor])
         stack.orientation = .horizontal
         stack.spacing = 8
         let close = button("xmark", L("markdown.closePreview"), "close")
@@ -53,7 +56,16 @@ final class PreviewToolbar: NSView, NSSearchFieldDelegate {
     }
     @objc private func performAction(_ sender: NSButton) {
         guard let action = sender.identifier?.rawValue else { return }
-        if action == "close" { onClose?() } else { onAction?(action, "") }
+        if action == "close" { onClose?() }
+        else if action == "editor" { onToggleEditor?() }
+        else { onAction?(action, "") }
+    }
+    func setEditorHidden(_ hidden: Bool) {
+        let label = hidden ? "显示源码与预览" : "隐藏源码，仅显示预览"
+        editor.toolTip = label
+        editor.setAccessibilityLabel(label)
+        editor.image = NSImage(systemSymbolName: hidden ? "rectangle.split.2x1" : "rectangle", accessibilityDescription: label)
+        editor.contentTintColor = hidden ? .controlAccentColor : .labelColor
     }
     func controlTextDidChange(_ notification: Notification) { onAction?("search", search.stringValue) }
     func control(_ control: NSControl, textView: NSTextView, doCommandBy command: Selector) -> Bool {

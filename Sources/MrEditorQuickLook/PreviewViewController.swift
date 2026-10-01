@@ -78,6 +78,9 @@ final class PreviewViewController: NSViewController, QLPreviewingController, WKN
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: "document.documentElement.dataset.host = 'quicklook'",
+            injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         configuration.setURLSchemeHandler(resources, forURLScheme: MarkdownPreviewResources.scheme)
         configuration.setURLSchemeHandler(images, forURLScheme: "mdasset")
         bridge.onReady = { [weak self] in
@@ -85,7 +88,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController, WKN
             self?.render()
         }
         configuration.userContentController.add(bridge, name: "markdownRenderer")
-        web = WKWebView(frame: NSRect(x: 0, y: 0, width: root.bounds.width, height: root.bounds.height - 46), configuration: configuration)
+        web = WKWebView(frame: root.bounds, configuration: configuration)
         web.autoresizingMask = [.width, .height]
         web.navigationDelegate = self
         web.allowsMagnification = true
@@ -144,7 +147,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController, WKN
 
     // Native controls stay visible while scrolling and never accept actions from document markup.
     private func setupToolbar(in root: NSView) {
-        sourceScroll = NSScrollView(frame: web.frame)
+        sourceScroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: root.bounds.width, height: root.bounds.height - 46))
         sourceScroll.autoresizingMask = [.width, .height]
         sourceScroll.hasVerticalScroller = true
         sourceScroll.hasHorizontalScroller = false
@@ -168,6 +171,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController, WKN
         let bar = NSStackView()
         bar.wantsLayer = true
         bar.orientation = .horizontal
+        bar.alignment = .centerY
         bar.spacing = 6
         bar.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(bar)

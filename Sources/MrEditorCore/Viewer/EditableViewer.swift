@@ -12,6 +12,15 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate, NSTextStor
     private var markdownPreview: MarkdownPreviewView?
     private var markdownDivider: MarkdownDivider?
     private var markdownConstraints: [NSLayoutConstraint] = []
+    private var markdownSplitConstraints: [NSLayoutConstraint] = []
+    private var markdownFullWidth: NSLayoutConstraint?
+    private(set) var previewOnly = false
+    func togglePreviewOnly() {
+        previewOnly.toggle()
+        updateMarkdownPreview()
+        if !previewOnly { window?.makeFirstResponder(textView) }
+        else { window?.makeFirstResponder(markdownPreview?.toolbar.search) }
+    }
     private var markdownWidth: NSLayoutConstraint?
     private var editorTrailing: NSLayoutConstraint!
     private var previewEnabled = true
@@ -38,6 +47,7 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate, NSTextStor
             let preview = MarkdownPreviewView(frame: .zero)
             preview.usesSharedToolbar = true
             let toolbar = preview.toolbar
+            toolbar.onToggleEditor = { [weak self] in self?.togglePreviewOnly() }
             let divider = MarkdownDivider(frame: .zero)
             for view in [preview, divider, toolbar] { view.translatesAutoresizingMaskIntoConstraints = false; addSubview(view) }
             markdownPreview = preview; markdownDivider = divider
@@ -55,13 +65,16 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate, NSTextStor
                 toolbar.leadingAnchor.constraint(equalTo: leadingAnchor),
                 toolbar.trailingAnchor.constraint(equalTo: trailingAnchor),
                 toolbar.heightAnchor.constraint(equalToConstant: 46),
-                scrollView.trailingAnchor.constraint(equalTo: divider.leadingAnchor),
-                divider.widthAnchor.constraint(equalToConstant: 6),
-                divider.topAnchor.constraint(equalTo: toolbar.bottomAnchor), divider.bottomAnchor.constraint(equalTo: bottomAnchor),
-                divider.trailingAnchor.constraint(equalTo: preview.leadingAnchor),
                 preview.topAnchor.constraint(equalTo: toolbar.bottomAnchor), preview.bottomAnchor.constraint(equalTo: bottomAnchor),
                 preview.trailingAnchor.constraint(equalTo: trailingAnchor)
             ]
+            markdownSplitConstraints = [
+                scrollView.trailingAnchor.constraint(equalTo: divider.leadingAnchor),
+                divider.widthAnchor.constraint(equalToConstant: 6),
+                divider.topAnchor.constraint(equalTo: toolbar.bottomAnchor), divider.bottomAnchor.constraint(equalTo: bottomAnchor),
+                divider.trailingAnchor.constraint(equalTo: preview.leadingAnchor)
+            ]
+            markdownFullWidth = preview.leadingAnchor.constraint(equalTo: leadingAnchor)
             markdownWidth = preview.widthAnchor.constraint(equalTo: widthAnchor, multiplier: 0.5)
             divider.toolTip = "拖动调整宽度，双击恢复左右等宽"
             divider.onReset = { [weak self, weak preview] in
@@ -77,7 +90,12 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate, NSTextStor
                 self.markdownWidth?.isActive = true
             }
         }
-        markdownPreview?.isHidden = !visible; markdownDivider?.isHidden = !visible
+        markdownPreview?.isHidden = !visible; markdownDivider?.isHidden = !visible || previewOnly
+        scrollView.isHidden = visible && previewOnly
+        markdownPreview?.toolbar.setEditorHidden(previewOnly)
+        NSLayoutConstraint.deactivate(markdownSplitConstraints)
+        markdownWidth?.isActive = false
+        markdownFullWidth?.isActive = false
         markdownPreview?.toolbar.isHidden = !visible
         for constraint in [scrollTopToContainer, rulerTopToContainer, headerTopToContainer] {
             constraint?.constant = visible ? 46 : 0
@@ -85,7 +103,14 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate, NSTextStor
         queryTopConstraint?.constant = visible ? 52 : 6
         if visible {
             editorTrailing.isActive = false
-            NSLayoutConstraint.activate(markdownConstraints); markdownWidth?.isActive = true
+            NSLayoutConstraint.activate(markdownConstraints)
+            if previewOnly {
+                editorTrailing.isActive = true
+                markdownFullWidth?.isActive = true
+            } else {
+                NSLayoutConstraint.activate(markdownSplitConstraints)
+                markdownWidth?.isActive = true
+            }
             markdownPreview?.update(source: logicalText, url: fileURL, dark: effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
         } else {
             NSLayoutConstraint.deactivate(markdownConstraints); markdownWidth?.isActive = false

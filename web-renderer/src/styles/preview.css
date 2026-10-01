@@ -31,6 +31,11 @@ body { margin: 0; background: var(--preview-bg); color: var(--preview-fg); }
 .search-field button { width:20px; height:20px; }
 .preview-search .preview-source-toggle { margin-left:6px; font:600 21px -apple-system,BlinkMacSystemFont,sans-serif; letter-spacing:-2px; }
 .preview-source-toggle[aria-pressed=true] { color:#1674dc; background:#3385e71b; opacity:1; }
+/* Quick Look overlays its native controls at the trailing edge of this row. */
+[data-host=quicklook] .preview-search { padding-right:376px; }
+[data-host=quicklook] .preview-source-toggle { display:none; }
+[data-host=quicklook] #toc-container, [data-host=quicklook] .toc-toggle { right:334px; }
+[data-host=quicklook] .toc-nav { right:334px; }
 [data-theme=dark] .search-field { background:#ffffff08; border-color:#ffffff20; }
 @media (max-width:480px) { .preview-search {padding-left:10px;} .search-field {flex:1; width:auto;} }
 @media print { .preview-search {display:none;} }
