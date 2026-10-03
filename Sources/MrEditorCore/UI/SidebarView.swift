@@ -8,6 +8,9 @@ import AppKit
 /// contentView の最前面側に置く（StatusBar / SearchBar と同じ作り）。
 final class SidebarView: NSView {
     var onSelect: ((Int) -> Void)?
+    var onCompare: (([Int]) -> Void)?
+    private(set) var selectedIndices = Set<Int>()
+    private var selectionAnchor: Int?
     var onClose: ((Int) -> Void)?
     var onConnection: ((SSHConnection) -> Void)?
     var onNewConnection: (() -> Void)?
@@ -120,11 +123,35 @@ final class SidebarView: NSView {
             }
         }
     }
+    @objc private func compareSelection() { onCompare?(selectedIndices.sorted()) }
+    private func documentMenu(for index: Int) -> NSMenu {
+        // A context click on either selected row preserves the pair.
+        if !selectedIndices.contains(index) { selectDocument(index, modifiers: []) }
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        let compare = NSMenuItem(title: L("diff.compare"), action: #selector(compareSelection), keyEquivalent: "")
+        compare.target = self
+        compare.isEnabled = selectedIndices.count == 2
+        menu.addItem(compare)
+        return menu
+    }
+    private func selectDocument(_ index: Int, modifiers: NSEvent.ModifierFlags) {
+        if modifiers.contains(.command) {
+            if selectedIndices.contains(index) { selectedIndices.remove(index) } else { selectedIndices.insert(index) }
+        } else if modifiers.contains(.shift), let anchor = selectionAnchor {
+            let visible = rows.map { $0.index }.sorted()
+            selectedIndices = Set(visible.filter { $0 >= min(anchor, index) && $0 <= max(anchor, index) })
+        } else { selectedIndices = [index] }
+        if !modifiers.contains(.shift) { selectionAnchor = index }
+        onSelect?(index)
+        rebuild()
+    }
     private func addDocument(_ document: WorkspaceDocument, indented: Bool) {
         let row = SidebarRow(); row.index = document.index; row.label.stringValue = document.name
         row.icon.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: nil)
-        row.onClick = { [weak self] in self?.onSelect?($0) }; row.onClose = { [weak self] in self?.onClose?($0) }
-        row.setActive(document.index == active); row.setDirty(document.dirty)
+        row.onClick = { [weak self] in self?.selectDocument($0, modifiers: $1) }; row.onClose = { [weak self] in self?.onClose?($0) }
+        row.onContextMenu = { [weak self] in self?.documentMenu(for: $0) }
+        row.setActive(selectedIndices.contains(document.index)); row.setDirty(document.dirty)
         let container = NSView(); row.translatesAutoresizingMaskIntoConstraints = false; container.addSubview(row)
         NSLayoutConstraint.activate([
             row.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: indented ? 18 : 0), row.trailingAnchor.constraint(equalTo: container.trailingAnchor),
@@ -139,7 +166,7 @@ final class SidebarView: NSView {
         rows.forEach { $0.applyTheme(theme) }
     }
     func reload(documents: [WorkspaceDocument], active: Int) {
-        self.documents = documents; self.active = active; refreshConnections()
+        self.documents = documents; self.active = active; selectedIndices = [active]; selectionAnchor = active; refreshConnections()
     }
     func setActive(_ index: Int) {
         active = index
@@ -165,7 +192,8 @@ final class SidebarRow: NSView {
     /// 未保存インジケータ（左端の小さな●。保存済みでは非表示）。
     private let dirtyDot = NSView()
     var index = 0
-    var onClick: ((Int) -> Void)?
+    var onClick: ((Int, NSEvent.ModifierFlags) -> Void)?
+    var onContextMenu: ((Int) -> NSMenu?)?
     /// × ボタンでこの行を閉じる要求。
     var onClose: ((Int) -> Void)?
 
@@ -218,7 +246,12 @@ final class SidebarRow: NSView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    override func mouseDown(with event: NSEvent) { onClick?(index) }
+    override func menu(for event: NSEvent) -> NSMenu? { onContextMenu?(index) }
+    override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.control) {
+            if let menu = menu(for: event) { NSMenu.popUpContextMenu(menu, with: event, for: self) }
+        } else { onClick?(index, event.modifierFlags) }
+    }
     @objc private func closeTapped() { onClose?(index) }
 
     private var isActive = false

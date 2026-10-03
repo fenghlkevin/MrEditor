@@ -11,6 +11,7 @@ final class MarkdownPreviewView: NSView, WKNavigationDelegate {
     private let rendererBridge = MarkdownRendererBridge()
     var onScroll: ((Double) -> Void)?
     var onClose: (() -> Void)?
+    var onRendered: (() -> Void)?
     var usesSharedToolbar = false { didSet { closeButton.isHidden = usesSharedToolbar } }
     lazy var toolbar = PreviewToolbar()
     private lazy var closeButton = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: L("markdown.closePreview"))!, target: self, action: #selector(closePreview))
@@ -179,6 +180,7 @@ final class MarkdownPreviewView: NSView, WKNavigationDelegate {
             switch result {
             case .success:
                 self.scroll(to: self.scrollFraction)
+                self.onRendered?()
             case .failure(let error):
                 self.rendererError = String(describing: error)
                 NSLog("Markdown enhanced render failed: %@", String(describing: error))
@@ -195,7 +197,7 @@ final class MarkdownPreviewView: NSView, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if fallback { scroll(to: scrollFraction); return }
+        if fallback { scroll(to: scrollFraction); onRendered?(); return }
         // Module execution can finish after navigation on a custom scheme.
         // Readiness comes from the trusted renderer, not just didFinish.
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in

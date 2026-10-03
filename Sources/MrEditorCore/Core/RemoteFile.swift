@@ -125,9 +125,10 @@ public enum RemoteFile {
     /// そこで標準入力を見張らせる ―― ssh が死ぬと向こうの `cat` が EOF を受け、
     /// `tail` を殺してから終わる。PTY を使わないのは、割り当てると改行が変換されて
     /// **本文が変わってしまう**ため。
-    static func followCommand(_ path: String, bytes: Int) -> String {
+    static func followCommand(_ path: String, bytes: Int, rotation: Bool = false) -> String {
         let q = shellQuote(path)
-        let tail = bytes > 0 ? "tail -c \(bytes) -f \(q)" : "tail -n 0 -f \(q)"
+        let flag = rotation ? "-F" : "-f"
+        let tail = bytes > 0 ? "tail -c \(bytes) \(flag) \(q)" : "tail -n 0 \(flag) \(q)"
         return "\(tail) & p=$!; cat > /dev/null; kill $p 2>/dev/null"
     }
 
@@ -194,7 +195,7 @@ public enum RemoteFile {
     /// 在るものだけが行として返る ＝ 無いものは黙って落ちる。
     static func capabilityCommand() -> String {
         let names = ["wc", "head", "tail", "grep"]
-        return names.map { "command -v \($0) >/dev/null 2>&1 && echo \($0)" }.joined(separator: "; ")
+        return names.map { "command -v \($0) >/dev/null 2>&1 && echo \($0)" }.joined(separator: "; ") + "; tail -n 0 -F /dev/null >/dev/null 2>&1 & probe=$!; sleep 1; if kill -0 $probe 2>/dev/null; then echo tailRotation; kill $probe 2>/dev/null; fi; wait $probe 2>/dev/null; true"
     }
 
     /// 向こうに在ったコマンド。無いものがあれば、その機能を畳む材料になる。
@@ -203,6 +204,7 @@ public enum RemoteFile {
         public let hasHead: Bool
         public let hasTail: Bool
         public let hasGrep: Bool
+        public let hasTailRotation: Bool
 
         /// 開くことすらできない組み合わせ。`head` が無いと 1 バイトも取り出せない。
         public var canRead: Bool { hasHead }
@@ -222,7 +224,8 @@ public enum RemoteFile {
             return out
         }
 
-        public init(hasWc: Bool, hasHead: Bool, hasTail: Bool, hasGrep: Bool) {
+        public init(hasWc: Bool, hasHead: Bool, hasTail: Bool, hasGrep: Bool, hasTailRotation: Bool = false) {
+            self.hasTailRotation = hasTailRotation
             self.hasWc = hasWc
             self.hasHead = hasHead
             self.hasTail = hasTail
@@ -238,7 +241,8 @@ public enum RemoteFile {
                 hasWc: found.contains("wc"),
                 hasHead: found.contains("head"),
                 hasTail: found.contains("tail"),
-                hasGrep: found.contains("grep")
+                hasGrep: found.contains("grep"),
+                hasTailRotation: found.contains("tailRotation")
             )
         }
     }

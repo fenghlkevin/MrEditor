@@ -6,6 +6,9 @@ import Foundation
 /// メニュー・ウィンドウタイトルなどの実行時表示はすべて `AppInfo.name` を参照する。
 /// （配布用 .app のバンドル名等は `scripts/make_app.sh` の `APP_NAME` 側で揃える。）
 enum AppInfo {
+    /// AI entry points are disabled for this distribution.
+    static let aiFeaturesEnabled = false
+
     /// 製品名（表示名）。**バンドルの `CFBundleName` が唯一の元**（`scripts/make_app.sh` の
     /// `APP_NAME`）。同じ core から無料版 "MrEditor" と Pro 版 "MrkEditor" の 2 つの .app が
     /// 出来るため、コード側に製品名を焼き付けない。開発ビルド（バンドル無し）では無料版扱い。

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="500" viewBox="0 0 1100 500">
+<rect width="1100" height="500" rx="18" fill="#eef3fa"/>
+<g font-family="PingFang SC,Arial,sans-serif">
+<text x="35" y="48" font-size="27" font-weight="600" fill="#203b60">SSH 连接与排查</text>
+<text x="35" y="78" font-size="16" fill="#526983">界面示意 · 按当前功能核对 · 编号对应操作顺序</text>
+<rect x="30" y="98" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="132" font-size="21" fill="#253d59">1. 主机 · 端口 · 用户 · 起始目录</text>
+<rect x="30" y="160" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="194" font-size="21" fill="#253d59">2. 密码 / 私钥 / 代理 · 可选跳板机 · 记住凭据</text>
+<rect x="30" y="222" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="256" font-size="21" fill="#253d59">3. 测试连接 → 核对主机指纹 → 选择远程文件</text>
+<rect x="30" y="284" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="318" font-size="21" fill="#253d59">4. 关键词 / 正则 · 上下文 · 返回末尾 · 跟随</text>
+<rect x="30" y="346" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="380" font-size="21" fill="#253d59">5. 工具 → SSH 排查：重连 / 伴随 / 分析 / 跟随 / 自动重连</text>
+<rect x="30" y="408" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="442" font-size="21" fill="#253d59">6. 已加载片段分析；跟随轮转与有限重试需核对范围</text>
+</g></svg>

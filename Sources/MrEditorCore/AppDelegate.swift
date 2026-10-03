@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// 開いた遠隔の面。持っておかないと即座に閉じる（NSWindowController は自分を保持しない）。
     private var remoteWindows: [SSHConnectionWindowController] = []
     private var directConnections: [UUID: SSHConnectionWindowController] = [:]
+    private var userGuideController: UserGuideWindowController?
     private var preferencesController: PreferencesWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -241,10 +242,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     @objc private func nextDifference(_ sender: Any?)       { windowController?.activeDiffViewer?.nextHunk() }
     /// 入口ではなく**比べ方**の切り替え（値を無視して形だけ見る）。どの入口から来ても効く。
     @objc private func toggleFormatCompare(_ sender: Any?)  { windowController?.activeDiffViewer?.toggleFormatCompare() }
+    @objc private func beginManualMerge(_ sender: Any?) { windowController?.activeDiffViewer?.startManualMerge() }
     @objc private func adoptHunk(_ sender: Any?)            { windowController?.activeDiffViewer?.adoptCurrentHunk() }
     @objc private func revertHunk(_ sender: Any?)           { windowController?.activeDiffViewer?.revertCurrentHunk() }
     @objc private func saveMergedResult(_ sender: Any?)     { windowController?.activeDiffViewer?.saveMerged() }
     @objc private func previousDifference(_ sender: Any?)   { windowController?.activeDiffViewer?.previousHunk() }
+
+    @objc private func folderSearch(_ sender: Any?) { windowController?.showFolderSearch() }
+    @objc private func logAnalysis(_ sender: Any?) { windowController?.showLogAnalysis() }
+    @objc private func characterInspector(_ sender: Any?) { windowController?.showCharacterInspector() }
+    @objc private func markdownExport(_ sender: Any?) { windowController?.showMarkdownExport() }
+    @objc private func filterTimeRange(_ sender: Any?) { windowController?.showDataProcessing(timeRange: true) }
+    @objc private func cleanCSV(_ sender: Any?) { windowController?.showDataProcessing(timeRange: false) }
 
     @objc private func setStructuredMode(_ sender: NSMenuItem) {
         let modes = StructuredMode.allCases
@@ -486,13 +495,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         followItem?.state = on ? .on : .off
     }
 
+    @objc private func showPreview(_ sender: Any?) { windowController?.menuTogglePreview() }
+    @objc private func previewOnly(_ sender: Any?) { windowController?.menuTogglePreviewOnly() }
+    @objc private func toggleLineWrap(_ sender: Any?) { AppSettings.lineWrap.toggle() }
+    @objc private func showJSONInspector(_ sender: Any?) { windowController?.showJSONInspector() }
+    @objc private func formatJSON(_ sender: Any?) { windowController?.toolbarJSONFormat(sender) }
+    @objc private func showFilter(_ sender: Any?) { windowController?.toolbarShowFilter(sender) }
+    @objc private func toggleSidebar(_ sender: Any?) { windowController?.toolbarToggleSidebar(sender) }
+    private var menuRemoteReader: RemoteWindowController? {
+        (NSApp.keyWindow?.windowController as? RemoteWindowController) ?? windowController?.activeRemoteReader
+    }
+    @objc private func remoteReconnect(_ sender: Any?) { menuRemoteReader?.menuReconnect() }
+    @objc private func remoteCompanion(_ sender: Any?) { menuRemoteReader?.menuOpenCompanion() }
+    @objc private func remoteAnalyze(_ sender: Any?) { menuRemoteReader?.menuAnalyze() }
+    @objc private func remoteFollow(_ sender: Any?) { menuRemoteReader?.menuToggleFollow() }
+    @objc private func remoteAutoReconnect(_ sender: Any?) { menuRemoteReader?.menuToggleAutoReconnect() }
+    @objc private func exportSettings(_ sender: Any?) { SettingsShare.export(presenting: NSApp.keyWindow) }
+    @objc private func importSettings(_ sender: Any?) { SettingsShare.importFromFile(presenting: NSApp.keyWindow) }
+    @objc private func copySettingsLink(_ sender: Any?) { SettingsShare.copyShareLink() }
+    @objc private func importSettingsLink(_ sender: Any?) { SettingsShare.importFromClipboard(presenting: NSApp.keyWindow) }
+
     // MARK: - メニュー有効/無効
 
     /// アクティブなドキュメントの能力に応じてメニュー項目を有効/無効にする。
     /// （target nil の編集系＝Undo/Cut 等は NSTextView が自動で検証する。）
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(remoteReconnect(_:)): return menuRemoteReader?.menuCanReconnect == true
+        case #selector(remoteCompanion(_:)), #selector(remoteAnalyze(_:)):
+            return menuRemoteReader?.currentSession != nil
+        case #selector(remoteFollow(_:)):
+            item.state = menuRemoteReader?.menuIsFollowing == true ? .on : .off
+            return menuRemoteReader?.menuCanFollow == true
+        case #selector(remoteAutoReconnect(_:)):
+            item.state = menuRemoteReader?.menuAutoReconnect == true ? .on : .off
+            return menuRemoteReader?.currentSession?.capabilities.canFollow == true
+        default: break
+        }
         guard let c = windowController else { return true }
         switch item.action {
+        case #selector(showPreview(_:)):
+            item.state = c.menuPreviewVisible ? .on : .off; return c.canShowPreview
+        case #selector(previewOnly(_:)):
+            item.state = c.menuPreviewOnly ? .on : .off; return c.canShowPreview
+        case #selector(toggleLineWrap(_:)):
+            item.state = AppSettings.lineWrap ? .on : .off; return true
+        case #selector(showJSONInspector(_:)), #selector(formatJSON(_:)): return c.canStructuredJson
+        case #selector(showFilter(_:)): return c.canFilter
+
+        case #selector(logAnalysis(_:)), #selector(characterInspector(_:)):
+            return c.hasDocument
+        case #selector(markdownExport(_:)):
+            return c.canExportMarkdown
+        case #selector(filterTimeRange(_:)), #selector(cleanCSV(_:)):
+            return c.canProcessData
         case #selector(performSave(_:)), #selector(performSaveAs(_:)):
             return c.canSave
         case #selector(performRevert(_:)):
@@ -535,11 +591,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             return c.activeDiffViewer != nil
         case #selector(toggleFormatCompare(_:)):
             item.state = (c.activeDiffViewer?.isFormatCompare ?? false) ? .on : .off
-            return c.activeDiffViewer != nil
-        case #selector(adoptHunk(_:)), #selector(revertHunk(_:)):
+            return c.activeDiffViewer?.canToggleFormatCompare ?? false
+        case #selector(revertHunk(_:)):
+            guard let d = c.activeDiffViewer else { return false }; return d.canMerge && d.canUndoMerge
+        case #selector(adoptHunk(_:)):
             // 形で比べている間はマージを封じる（形が同じ＝中身は違う。採ると中身が消える）。
             guard let d = c.activeDiffViewer else { return false }
             return d.canMerge && d.hasCurrentHunk
+        case #selector(beginManualMerge(_:)):
+            guard let d = c.activeDiffViewer else { return false }; return d.canMerge && !d.manualMergeActive
         case #selector(saveMergedResult(_:)):
             return c.activeDiffViewer?.canMerge ?? false
         case #selector(setStructuredMode(_:)):
@@ -582,7 +642,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     // MARK: - メニュー
 
-    private func buildMenu() {
+    func buildMenu() {
         let mainMenu = NSMenu()
 
         // アプリメニュー
@@ -743,6 +803,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         findPrevItem.target = self
         editMenu.addItem(findPrevItem)
 
+        let folderSearchItem = NSMenuItem(title: "跨文件搜索与替换…", action: #selector(folderSearch(_:)), keyEquivalent: "f")
+        folderSearchItem.keyEquivalentModifierMask = [.command, .shift]; folderSearchItem.target = self; editMenu.addItem(folderSearchItem)
+
         // 一致行の前後も出す（grep -C）。絞り込んだまま前後を伸び縮みさせられるように
         // キーボードからも触れる（検索バーの「±」欄と同じ値を動かす）。
         let moreContext = NSMenuItem(title: L("menu.contextMore"),
@@ -821,6 +884,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         filterItem.keyEquivalentModifierMask = [.command, .option]
         filterItem.target = self
         formatMenu.addItem(filterItem)
+
+        formatMenu.addItem(.separator())
+        let timeRangeItem = NSMenuItem(title: "时间范围筛选…", action: #selector(filterTimeRange(_:)), keyEquivalent: "")
+        timeRangeItem.target = self; formatMenu.addItem(timeRangeItem)
+        let cleanCSVItem = NSMenuItem(title: "CSV / TSV 数据清洗…", action: #selector(cleanCSV(_:)), keyEquivalent: "")
+        cleanCSVItem.target = self; formatMenu.addItem(cleanCSVItem)
+
+        for (title, action) in [("日志时间轴与字段筛选…", #selector(logAnalysis(_:))), ("字符与编码检查器…", #selector(characterInspector(_:))), ("Markdown 导出…", #selector(markdownExport(_:)))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: ""); item.target = self; formatMenu.addItem(item)
+        }
 
         // 表示メニュー（末尾追従）
         let viewMenuItem = NSMenuItem()
@@ -962,9 +1035,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         diffMenu.addItem(.separator())
         let formatCompare = NSMenuItem(title: L("menu.compare.format"),
                                        action: #selector(toggleFormatCompare(_:)), keyEquivalent: "f")
-        formatCompare.keyEquivalentModifierMask = [.command, .shift]
+        formatCompare.keyEquivalentModifierMask = [.command, .option, .shift]
         formatCompare.target = self
         diffMenu.addItem(formatCompare)
+        let manualMerge = NSMenuItem(title: L("diff.manualMerge"), action: #selector(beginManualMerge(_:)), keyEquivalent: "")
+        manualMerge.target = self; diffMenu.addItem(manualMerge)
 
         diffMenu.addItem(.separator())
         let adopt = NSMenuItem(title: L("menu.compare.adopt"),
@@ -986,16 +1061,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         diffItem.submenu = diffMenu
         viewMenu.addItem(diffItem)
 
-        // AI メニュー（BYOK・単発解析）。ログ／テキストの「今見ている箇所」に AI をぶつける。
-        let aiMenuItem = NSMenuItem()
-        mainMenu.addItem(aiMenuItem)
-        let aiMenu = NSMenu(title: L("ai.menu.title"))
-        aiMenuItem.submenu = aiMenu
-        let diagnose = NSMenuItem(title: L("ai.menu.errorCause"),
-                                  action: #selector(aiDiagnoseError(_:)), keyEquivalent: "e")
-        diagnose.keyEquivalentModifierMask = [.command, .option]
-        diagnose.target = self
-        aiMenu.addItem(diagnose)
+        viewMenu.addItem(.separator())
+        for (title, action) in [(L("menu.preview"), #selector(showPreview(_:))),
+                                (L("menu.previewOnly"), #selector(previewOnly(_:))),
+                                (L("menu.lineWrap"), #selector(toggleLineWrap(_:))),
+                                (L("menu.jsonInspector"), #selector(showJSONInspector(_:))),
+                                (L("menu.filterLines"), #selector(showFilter(_:))),
+                                (L("menu.sidebar"), #selector(toggleSidebar(_:)))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self; viewMenu.addItem(item)
+        }
+        let toolsItem = NSMenuItem()
+        mainMenu.addItem(toolsItem)
+        let toolsMenu = NSMenu(title: L("menu.tools")); toolsItem.submenu = toolsMenu
+        let jsonFormat = NSMenuItem(title: L("menu.jsonFormat"), action: #selector(formatJSON(_:)), keyEquivalent: "")
+        jsonFormat.target = self; toolsMenu.addItem(jsonFormat)
+        let sshMenu = NSMenu(title: L("menu.sshTools"))
+        for (title, action) in [(L("menu.remoteReconnect"), #selector(remoteReconnect(_:))),
+                                (L("menu.remoteCompanion"), #selector(remoteCompanion(_:))),
+                                (L("menu.remoteAnalyze"), #selector(remoteAnalyze(_:))),
+                                (L("menu.remoteFollow"), #selector(remoteFollow(_:))),
+                                (L("menu.remoteAutoReconnect"), #selector(remoteAutoReconnect(_:)))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self; sshMenu.addItem(item)
+        }
+        let sshItem = NSMenuItem(title: L("menu.sshTools"), action: nil, keyEquivalent: "")
+        sshItem.submenu = sshMenu; toolsMenu.addItem(sshItem)
+        toolsMenu.addItem(.separator())
+        for (title, action) in [(L("menu.exportSettings"), #selector(exportSettings(_:))),
+                                (L("menu.importSettings"), #selector(importSettings(_:))),
+                                (L("menu.copySettingsLink"), #selector(copySettingsLink(_:))),
+                                (L("menu.importSettingsLink"), #selector(importSettingsLink(_:)))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self; toolsMenu.addItem(item)
+        }
 
         // 分析メニュー（Pro）。**無料版にも同じ位置に同じ項目を出す。**
         // グレーアウトはしない（macOS では「今は条件が揃っていない」の意味になり、
@@ -1037,7 +1136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         mainMenu.addItem(helpMenuItem)
         let helpMenu = NSMenu(title: L("menu.help"))
         helpMenuItem.submenu = helpMenu
-        let appHelp = NSMenuItem(title: L("menu.appHelp", AppInfo.name),
+        let appHelp = NSMenuItem(title: L("menu.userGuide"),
                                  action: #selector(openHelp(_:)), keyEquivalent: "?")
         appHelp.target = self
         helpMenu.addItem(appHelp)
@@ -1047,7 +1146,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     @objc private func openHelp(_ sender: Any?) {
-        NSWorkspace.shared.open(AppInfo.helpURL)
+        if userGuideController == nil { userGuideController = UserGuideWindowController() }
+        userGuideController?.showWindow(nil)
+        userGuideController?.window?.makeKeyAndOrderFront(nil)
     }
 
     @objc func openPreferences(_ sender: Any?) {

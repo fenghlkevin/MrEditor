@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="500" viewBox="0 0 1100 500">
+<rect width="1100" height="500" rx="18" fill="#eef3fa"/>
+<g font-family="PingFang SC,Arial,sans-serif">
+<text x="35" y="48" font-size="27" font-weight="600" fill="#203b60">JSON / NDJSON 与查询</text>
+<text x="35" y="78" font-size="16" fill="#526983">界面示意 · 按当前功能核对 · 编号对应操作顺序</text>
+<rect x="30" y="98" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="132" font-size="21" fill="#253d59">1. JSON 检查器：树形节点 ↔ 源码位置</text>
+<rect x="30" y="160" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="194" font-size="21" fill="#253d59">2. 展开节点 · 每批 500 个 · 加载更多</text>
+<rect x="30" y="222" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="256" font-size="21" fill="#253d59">3. 刷新 · 格式化为新文档 · 返回源码</text>
+<rect x="30" y="284" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="318" font-size="21" fill="#253d59">4. NDJSON：逐记录列表 → 下方 JSON 树 · 错误行提示</text>
+<rect x="30" y="346" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="380" font-size="21" fill="#253d59">5. JSON 查询：路径 / 索引 / 通配符 / 条件 → 只读结果</text>
+<rect x="30" y="408" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="442" font-size="21" fill="#253d59">6. 关闭查询恢复原文；查询结果不提供源位置映射</text>
+</g></svg>

@@ -17,6 +17,7 @@ public final class RemoteFollower {
 
     private let target: RemoteFile.Target
     private var transport: SSHTransport?
+    private var rotation = false
     private var process: Process?
     private var accumulator = LineAccumulator()
     private let lock = NSLock()
@@ -30,6 +31,7 @@ public final class RemoteFollower {
 
     init(session: RemoteSession) {
         target = session.target
+        rotation = session.capabilities.hasTailRotation
         transport = session.transport
     }
 
@@ -51,9 +53,9 @@ public final class RemoteFollower {
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
         proc.arguments = RemoteFile.sshArguments(
             host: target.host,
-            remoteCommand: RemoteFile.followCommand(target.path, bytes: fromBytes)
+            remoteCommand: RemoteFile.followCommand(target.path, bytes: fromBytes, rotation: rotation)
         )
-        transport?.configure(proc, command: RemoteFile.followCommand(target.path, bytes: fromBytes))
+        transport?.configure(proc, command: RemoteFile.followCommand(target.path, bytes: fromBytes, rotation: rotation))
         let out = Pipe()
         proc.standardOutput = out
         let errors = Pipe()
@@ -75,7 +77,6 @@ public final class RemoteFollower {
                 let rest = self.accumulator.flush()
                 DispatchQueue.main.async {
                     if !rest.isEmpty { self.onLines?(rest) }
-                    self.onEnd?()
                 }
                 return
             }

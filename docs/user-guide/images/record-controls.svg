@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="500" viewBox="0 0 1100 500">
+<rect width="1100" height="500" rx="18" fill="#eef3fa"/>
+<g font-family="PingFang SC,Arial,sans-serif">
+<text x="35" y="48" font-size="27" font-weight="600" fill="#203b60">CSV / TSV 阅读与清洗</text>
+<text x="35" y="78" font-size="16" fill="#526983">界面示意 · 按当前功能核对 · 编号对应操作顺序</text>
+<rect x="30" y="98" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="132" font-size="21" fill="#253d59">1. 结构化表格：首行为标题 · 搜索 · 上一组列 / 下一组列</text>
+<rect x="30" y="160" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="194" font-size="21" fill="#253d59">2. 每组 100 列 · 拖动列宽 / 列顺序 · 点击单元格复制</text>
+<rect x="30" y="222" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="256" font-size="21" fill="#253d59">3. 原生表格不按列排序；右侧预览表格另有排序操作</text>
+<rect x="30" y="284" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="318" font-size="21" fill="#253d59">4. 数据清洗：分隔符 · 标题 · 操作列 · 空值 / 类型</text>
+<rect x="30" y="346" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="380" font-size="21" fill="#253d59">5. 处理顺序：去首尾空白 → 空值 → 转换 → 去重</text>
+<rect x="30" y="408" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="442" font-size="21" fill="#253d59">6. 预览 → 导出独立文件 → 查看处理报告</text>
+</g></svg>

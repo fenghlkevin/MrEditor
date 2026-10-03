@@ -6,8 +6,8 @@ import AppKit
 /// 差分の手（`DiffModel`）は行を実体化せず、画面に出る数十行だけをその場で左右に組む。
 /// 8,600 万行の diff でも、描画側が持つのは 1 画面分の `NSAttributedString` だけ。
 ///
-/// 読み取り専用。編集・検索・追従は持たない（`DocumentPane` の既定実装に委ねる）。
-final class DiffViewer: NSView, DocumentPane {
+/// Small comparisons use a live, two-sided editor; large sources retain virtualized comparison.
+final class DiffViewer: NSView, DocumentPane, NSTextStorageDelegate {
 
     // MARK: - DocumentPane
 
@@ -49,7 +49,47 @@ final class DiffViewer: NSView, DocumentPane {
     var isFormatCompare: Bool { !formatMask.isEmpty }
     /// マージできるか。**形で比べている間はできない** —— 形が同じ＝中身は違うので、
     /// 片方を採ると中身が消える。ここを開けておくと、静かにデータを壊す道が 1 本できる。
-    var canMerge: Bool { !isFormatCompare }
+    var canMerge: Bool { !isFormatCompare && model != nil && !manualLoading }
+
+    let mergeTextView = MergeCodeView()
+    private(set) var inlineMerge: InlineMergeView?
+    private var manualState: ManualMergeState?
+    private var manualLoading = false
+    private var mergeDirty = false
+    private var savedMergeText: String?
+    private var draftTimer: Timer?
+    private(set) var draftID: String?
+    var draftStore = DraftStore.shared
+    var canEdit: Bool { manualState != nil }
+    var isDirty: Bool { mergeDirty }
+    var restorableText: String? { mergeDirty ? mergeTextView.string : nil }
+    var manualMergeActive: Bool { manualState != nil }
+    func save() -> Bool { saveMergedResult() }
+    func saveAs() -> Bool { saveMergedResult() }
+    func flushDraft() {
+        draftTimer?.invalidate(); draftTimer = nil
+        if let id = draftID { draftStore.write(id: id, text: MergeSideDraft(text: mergeTextView.string, side: "右侧", displayName: right?.displayName).serialized) }
+    }
+    func discardDraft() {
+        draftTimer?.invalidate(); draftTimer = nil
+        if let id = draftID { draftStore.discard(id); draftID = nil }
+    }
+    private func updateMergeDirty() {
+        if savedMergeText == mergeTextView.string {
+            if mergeDirty { mergeDirty = false; discardDraft(); onDirtyChange?(false) }
+        } else { markMergeDirty() }
+    }
+    private func markMergeDirty() {
+        if draftID == nil { draftID = DraftStore.newID() }
+        if !mergeDirty { mergeDirty = true; onDirtyChange?(true) }
+        draftTimer?.invalidate()
+        draftTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: false) { [weak self] _ in self?.flushDraft() }
+    }
+    func textStorage(_ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions, range editedRange: NSRange, changeInLength delta: Int) {
+        guard manualState != nil, editedMask.contains(.editedCharacters) else { return }
+        updateMergeDirty()
+    }
+    deinit { draftTimer?.invalidate() }
 
     private var topRow = 0
     private var scrollAccumulator: CGFloat = 0
@@ -128,8 +168,9 @@ final class DiffViewer: NSView, DocumentPane {
 
         let buttons: [(String, Selector)] = [("diff.previousAction", #selector(previousAction)), ("diff.nextAction", #selector(nextAction)),
             ("diff.copyLeft", #selector(copyLeft)), ("diff.copyRight", #selector(copyRight)),
-            ("diff.adoptAction", #selector(adoptAction)), ("diff.revertAction", #selector(revertAction)), ("diff.saveAction", #selector(saveAction))]
+            ("diff.adoptAction", #selector(adoptAction)), ("diff.manualMerge", #selector(startManualMerge)), ("diff.revertAction", #selector(revertAction)), ("diff.saveAction", #selector(saveAction))]
         actions.spacing = 6
+        actions.detachesHiddenViews = true
         for (title, action) in buttons {
             let button = NSButton(title: L(title), target: self, action: action); button.bezelStyle = .rounded
             actions.addArrangedSubview(button)
@@ -205,6 +246,7 @@ final class DiffViewer: NSView, DocumentPane {
                 self.leftLabel.stringValue = l.displayName
                 self.rightLabel.stringValue = r.displayName
                 self.install(m)
+                self.beginInlineMerge(showError: false)
                 self.onCompared?()
             }
         }
@@ -245,8 +287,14 @@ final class DiffViewer: NSView, DocumentPane {
         setFormatMask(isFormatCompare ? [] : .standard)
     }
 
+    var canToggleFormatCompare: Bool { !manualLoading && !mergeDirty }
     private func setFormatMask(_ mask: FormatMask) {
-        guard let l = left, let r = right else { NSSound.beep(); return }
+        guard canToggleFormatCompare, let l = left, let r = right else { NSSound.beep(); return }
+        if let editor = inlineMerge {
+            mergeTextView.delegate = nil; mergeTextView.textStorage?.delegate = nil
+            editor.removeFromSuperview(); inlineMerge = nil; manualState = nil; savedMergeText = nil
+            for view in [leftView, rightView, gutter, scroller] { view.isHidden = false }
+        }
         formatMask = mask
         summary.stringValue = L("diff.comparing")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -255,6 +303,7 @@ final class DiffViewer: NSView, DocumentPane {
             DispatchQueue.main.async {
                 guard let self, self.formatMask == mask else { return }   // 連打で追い越された分は捨てる
                 self.install(m)
+                if mask.isEmpty { self.beginInlineMerge(showError: false) }
             }
         }
     }
@@ -267,11 +316,31 @@ final class DiffViewer: NSView, DocumentPane {
     // MARK: - 描画（見えている行だけ組む）
 
     private var visibleRowCount: Int {
-        max(1, Int((bounds.height - headerHeight) / max(1, leftView.lineHeight)))
+        max(1, Int(leftView.bounds.height / max(1, leftView.lineHeight)))
     }
     private var maxTopRow: Int { max(0, (model?.rowCount ?? 0) - visibleRowCount) }
 
     private func refresh() {
+        if let inlineMerge {
+            summary.stringValue = inlineMerge.updating ? "正在更新差异…" : "\(inlineMerge.model.hunks.count) 处差异 · 右侧可编辑"
+            for case let button as NSButton in actions.arrangedSubviews {
+                if button.action == #selector(startManualMerge) { button.isEnabled = false; button.isHidden = true }
+                if button.action == #selector(previousAction) { button.title = "上一处" }
+                if button.action == #selector(nextAction) { button.title = "下一处" }
+                if button.action == #selector(copyLeft) { button.title = "复制左侧" }
+                if button.action == #selector(copyRight) { button.title = "复制右侧" }
+                if button.action == #selector(adoptAction) { button.title = "采纳左侧 →"; button.isEnabled = !inlineMerge.updating && !inlineMerge.model.hunks.isEmpty }
+                if button.action == #selector(revertAction) { button.title = "撤销合并"; button.isEnabled = inlineMerge.canUndo }
+            }
+            leftLabel.stringValue = (left?.displayName ?? "左侧") + " · 只读"
+            rightLabel.stringValue = (right?.displayName ?? "右侧") + (mergeDirty ? " · 未保存" : " · 合并结果（可编辑）")
+            for case let button as NSButton in actions.arrangedSubviews {
+                if button.action == #selector(saveAction) { button.title = L("diff.saveAction") }
+            }
+            emitState()
+            return
+        }
+        for case let button as NSButton in actions.arrangedSubviews where button.action == #selector(startManualMerge) { button.isHidden = false }
         guard let model, let left, let right else { return }
         topRow = min(max(0, topRow), maxTopRow)
 
@@ -286,7 +355,7 @@ final class DiffViewer: NSView, DocumentPane {
             guard let row = model.row(at: rowIdx) else { break }
 
             let op = model.opIndex(at: rowIdx)
-            let isAdopted = op.map { adopted.contains($0) } ?? false
+            let isAdopted = manualState == nil && (op.map { adopted.contains($0) } ?? false)
 
             // **右が結果。** 矢印（→）を押した差分は、その場で右の中身が左に入れ替わる。
             // 印だけ覚えて保存時に適用する方式では画面が変わらず、「マージされない」と
@@ -366,7 +435,7 @@ final class DiffViewer: NSView, DocumentPane {
                 // 形で比べている間はマージできないので、押せる場所も矢印も出さない。
                 hunkOp: (canMerge && isDiff) ? op : nil,   // ハンクの全行で押せる（先頭行だけだと外れる）
                 isHead: canMerge && isHead,                // 矢印は先頭行にだけ描く
-                adopted: op.map { adopted.contains($0) } ?? false,
+                adopted: manualState == nil && (op.map { adopted.contains($0) } ?? false),
                 current: op != nil && op == currentHunkOp))
             lastOp = op
         }
@@ -374,6 +443,12 @@ final class DiffViewer: NSView, DocumentPane {
         gutter.lineHeight = leftView.lineHeight
         gutter.window?.invalidateCursorRects(for: gutter)
         updateSummary()
+        for case let button as NSButton in actions.arrangedSubviews {
+            if button.action == #selector(startManualMerge) { button.isEnabled = canMerge && manualState == nil }
+            if [#selector(adoptAction), #selector(revertAction), #selector(saveAction)].contains(button.action) { button.isEnabled = canMerge }
+            if button.action == #selector(adoptAction) { button.title = manualState == nil ? L("diff.adoptAction") : L("diff.useLeft") }
+            if button.action == #selector(revertAction) { button.title = manualState == nil ? L("diff.revertAction") : L("diff.useRight") }
+        }
         leftView.needsDisplay = true; rightView.needsDisplay = true
 
         // キャッシュは可視付近だけ残す（延々スクロールしても太らない）。
@@ -414,7 +489,7 @@ final class DiffViewer: NSView, DocumentPane {
     private func updateSummary() {
         guard let model else { return }
         let base = statusLabel(for: model)
-        summary.stringValue = adopted.isEmpty ? base : base + " ／ " + L("diff.adopted", adopted.count)
+        summary.stringValue = manualState != nil ? base + " ／ 手动合并" : (adopted.isEmpty ? base : base + " ／ " + L("diff.adopted", adopted.count))
     }
 
     /// 要約の文言。**形で比べている間はそう名乗る** —— 「差分なし」だけ出すと、
@@ -427,6 +502,10 @@ final class DiffViewer: NSView, DocumentPane {
     }
 
     private func emitState() {
+        if let editor = inlineMerge {
+            onStateChange?(ViewerState(encodingName: "\(editor.model.hunks.count) 处差异 · 右侧可编辑", lineCount: LineStartIndex(editor.activeEditor.string).lineCount, lineCountIsExact: true, fileSize: 0, indexProgress: 1.0))
+            return
+        }
         guard let model else { return }
         // ファイルサイズの欄は diff では意味がない（左右 2 つある）。差分の要約を出す。
         let label = statusLabel(for: model)
@@ -519,13 +598,16 @@ final class DiffViewer: NSView, DocumentPane {
     // MARK: - 差分間の移動
 
     /// 次の差分へ。移動先を「選んでいるハンク」にする（⌥→ の対象になる）。
-    func nextHunk() { goToHunk(model?.hunk(after: currentHunkOp)) }
+    func nextHunk() { if let inlineMerge { inlineMerge.navigate(1) } else { goToHunk(model?.hunk(after: currentHunkOp)) } }
     /// 前の差分へ。
-    func previousHunk() { goToHunk(model?.hunk(before: currentHunkOp)) }
+    func previousHunk() { if let inlineMerge { inlineMerge.navigate(-1) } else { goToHunk(model?.hunk(before: currentHunkOp)) } }
 
     private func goToHunk(_ op: Int?) {
         guard let model, let op else { NSSound.beep(); return }
         currentHunkOp = op
+        if let range = manualState?.ranges[op], NSMaxRange(range) <= mergeTextView.string.utf16.count {
+            mergeTextView.setSelectedRange(range); mergeTextView.scrollRangeToVisible(range)
+        }
         let row = model.startRow(ofOp: op)
         // 画面外なら寄せる。見えているならスクロールしない（目が飛ばない）。
         if row < topRow || row >= topRow + visibleRowCount - 1 {
@@ -538,10 +620,11 @@ final class DiffViewer: NSView, DocumentPane {
     @objc private func previousAction() { previousHunk() }
     @objc private func adoptAction() { adoptCurrentHunk() }
     @objc private func revertAction() { revertCurrentHunk() }
-    @objc private func saveAction() { saveMerged() }
+    @objc private func saveAction() { _ = saveMergedResult() }
     @objc private func copyLeft() { copyHunk(leftSide: true) }
     @objc private func copyRight() { copyHunk(leftSide: false) }
     private func copyHunk(leftSide: Bool) {
+        if let inlineMerge { inlineMerge.copySelected(left: leftSide); return }
         guard let model, let op = currentHunkOp, let source = leftSide ? left : right else { NSSound.beep(); return }
         let start: Int, count: Int
         switch model.ops[op] {
@@ -558,12 +641,14 @@ final class DiffViewer: NSView, DocumentPane {
     // MARK: - マージ
 
     /// 選んでいるハンクがあるか（メニューの有効化）。
-    var hasCurrentHunk: Bool { currentHunkOp != nil }
+    var hasCurrentHunk: Bool { inlineMerge.map { !$0.updating && !$0.model.hunks.isEmpty } ?? (currentHunkOp != nil) }
     /// 採用したハンクがあるか（「マージして保存」の有効化）。
-    var hasAdoptedHunks: Bool { !adopted.isEmpty }
+    var canUndoMerge: Bool { inlineMerge == nil ? hasCurrentHunk : (inlineMerge?.canUndo ?? false) }
+    var hasAdoptedHunks: Bool { mergeDirty || !adopted.isEmpty }
 
     /// 選んでいるハンクで、右の内容を採用する（左が土台）。
     func adoptCurrentHunk() {
+        if let inlineMerge { inlineMerge.adoptSelected(); return }
         guard canMerge, let op = currentHunkOp else { NSSound.beep(); return }
         adopted.insert(op)
         refresh()
@@ -571,6 +656,7 @@ final class DiffViewer: NSView, DocumentPane {
 
     /// 採用を取り消す（左のままに戻す）。
     func revertCurrentHunk() {
+        if let inlineMerge { inlineMerge.undoMerge(); return }
         guard canMerge, let op = currentHunkOp else { NSSound.beep(); return }
         adopted.remove(op)
         refresh()
@@ -591,38 +677,89 @@ final class DiffViewer: NSView, DocumentPane {
         currentHunkOp = op
     }
 
+    @objc func startManualMerge() { beginInlineMerge(showError: true) }
+    private func beginInlineMerge(showError: Bool) {
+        guard canMerge, manualState == nil, let model, let left, let right else { return }
+        manualLoading = true; let applied = adopted
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                guard left.lineCount <= 50_000, right.lineCount <= 50_000,
+                      let leftText = left.editableSnapshot(limit: ManualMergeState.byteLimit),
+                      let rightText = right.editableSnapshot(limit: ManualMergeState.byteLimit) else {
+                    throw NSError(domain: "InlineMerge", code: 1, userInfo: [NSLocalizedDescriptionKey: "并排编辑支持每侧最多 16 MB、50,000 行；当前文件仍可按差异块采纳并保存。"])
+                }
+                let state = try ManualMergeState(model: model, left: left, right: right, adopted: applied)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.manualLoading = false
+                    self.mergeTextView.string = applied.isEmpty ? rightText : state.initialText
+                    self.savedMergeText = rightText
+                    self.manualState = state; self.mergeTextView.textStorage?.delegate = self
+                    let editor = InlineMergeView(left: leftText, rightEditor: self.mergeTextView, fileName: right.displayName)
+                    self.inlineMerge = editor; self.addSubview(editor)
+                    editor.onChange = { [weak self] in self?.updateMergeDirty(); self?.refresh() }
+                    editor.onFocus = { [weak self] in self?.refresh() }
+                    editor.onSummary = { [weak self] _, _ in self?.refresh() }
+                    self.rightLabel.stringValue = right.displayName + " · 合并结果（可编辑）"
+                    for view in [self.leftView, self.rightView, self.gutter, self.scroller] { view.isHidden = true }
+                    if !applied.isEmpty { self.markMergeDirty(); self.flushDraft() }
+                    self.needsLayout = true; self.layoutSubtreeIfNeeded(); self.refresh()
+                }
+            } catch {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }; self.manualLoading = false; self.refresh()
+                    guard showError else { return }
+                    let alert = NSAlert(); alert.messageText = "无法开启并排编辑"; alert.informativeText = error.localizedDescription
+                    if let window = self.window { alert.beginSheetModal(for: window) }
+                }
+            }
+        }
+    }
     /// マージ結果を別名で保存する。**元の 2 ファイルには触らない。**
     ///
     /// 本文をメモリに載せず、ops を辿って左右のソースからバイトを流す（10GB でも成立する）。
-    func saveMerged() {
-        guard canMerge, let model, let left, let right else { NSSound.beep(); return }
+    func saveMerged() { _ = save() }
+    private func saveMergedResult() -> Bool {
+        guard canMerge else { NSSound.beep(); return false }
 
         let panel = NSSavePanel()
-        panel.message = L("diff.saveMergedMessage")
+        panel.message = manualState == nil ? L("diff.saveMergedMessage") : "另存合并结果（不覆盖原文件）"
         panel.prompt = L("diff.saveMerged")
         panel.nameFieldStringValue = mergedFileName()
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard panel.runModal() == .OK, let url = panel.url else { return false }
 
-        let adoptedNow = adopted
-        let eol: [UInt8] = [0x0A]        // 出力は LF。混在させない。
-
-        do {
-            if FileManager.default.fileExists(atPath: url.path) {
-                try FileManager.default.removeItem(at: url)
-            }
-            FileManager.default.createFile(atPath: url.path, contents: nil)
-            let out = try FileHandle(forWritingTo: url)
-            defer { try? out.close() }
-            try model.writeMerged(left: left, right: right, applied: adoptedNow, eol: eol, to: out)
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = L("diff.saveFailed")
-            alert.informativeText = error.localizedDescription
-            alert.alertStyle = .warning
-            alert.runModal()
-            return
+        do { try writeMergeResult(to: url) }
+        catch {
+            let alert = NSAlert(); alert.messageText = L("diff.saveFailed"); alert.informativeText = error.localizedDescription; alert.runModal(); return false
         }
         onMergedSaved?(url)
+        return true
+    }
+    func writeMergeResult(to url: URL) throws {
+        guard canMerge, let model, let left, let right else {
+            throw NSError(domain: "InlineMerge", code: 2, userInfo: [NSLocalizedDescriptionKey: "该侧没有可编辑合并结果。"])
+        }
+        let adoptedNow = adopted
+        let eol: [UInt8] = [0x0A]
+        if [left.sourceURL, right.sourceURL].compactMap({ $0 }).contains(where: { $0.resolvingSymlinksInPath().standardizedFileURL == url.resolvingSymlinksInPath().standardizedFileURL }) {
+            throw NSError(domain: "InlineMerge", code: 3, userInfo: [NSLocalizedDescriptionKey: "合并结果不能覆盖对比的原始文件，请另选文件名。"])
+        }
+        let staging = url.deletingLastPathComponent().appendingPathComponent(".mreditor-merge-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: staging) }
+        do {
+            if manualState != nil { try Data(mergeTextView.string.utf8).write(to: staging, options: .atomic) }
+            else {
+                FileManager.default.createFile(atPath: staging.path, contents: nil)
+                let out = try FileHandle(forWritingTo: staging); defer { try? out.close() }
+                try model.writeMerged(left: left, right: right, applied: adoptedNow, eol: eol, to: out)
+            }
+            if FileManager.default.fileExists(atPath: url.path) { _ = try FileManager.default.replaceItemAt(url, withItemAt: staging) }
+            else { try FileManager.default.moveItem(at: staging, to: url) }
+        } catch { throw error }
+        if manualState != nil {
+            savedMergeText = mergeTextView.string
+            updateMergeDirty(); flushDraft(); refresh()
+        }
     }
 
     /// マージ結果を保存したときの通知（開いて見せるため）。
@@ -633,7 +770,8 @@ final class DiffViewer: NSView, DocumentPane {
         let base = right?.displayName ?? "merged.txt"
         let ext = (base as NSString).pathExtension
         let stem = (base as NSString).deletingPathExtension
-        return ext.isEmpty ? "\(stem)-merged" : "\(stem)-merged.\(ext)"
+        let suffix = "-merged"
+        return ext.isEmpty ? stem + suffix : "\(stem)\(suffix).\(ext)"
     }
 
     /// 左右のカラムを同じ水平位置に保つ。
@@ -716,22 +854,26 @@ final class DiffViewer: NSView, DocumentPane {
         rightLabel.frame = NSRect(x: colW + 40, y: 37, width: max(0, colW - 160), height: 18)
         summary.frame = NSRect(x: w - scrollerWidth - 240, y: 37, width: 230, height: 18)
 
-        actions.frame = NSRect(x: 8, y: 3, width: min(w - 24, actions.fittingSize.width), height: 28)
-        let bodyH = max(0, h - headerHeight)
-        leftView.frame = NSRect(x: 0, y: 0, width: colW, height: bodyH)
-        gutter.frame = NSRect(x: colW, y: 0, width: gutterW, height: bodyH)
-        rightView.frame = NSRect(x: colW + gutterW, y: 0, width: colW, height: bodyH)
-        scroller.frame = NSRect(x: w - scrollerWidth, y: 0, width: scrollerWidth, height: bodyH)
+        actions.frame = NSRect(x: 8, y: 3, width: min(w - 24, actions.fittingSize.width), height: 32)
+        inlineMerge?.frame = NSRect(x: 0, y: 0, width: w, height: max(0, h - headerHeight))
+        let resultHeight: CGFloat = 0
+        let bodyH = max(0, h - headerHeight - resultHeight)
+        leftView.frame = NSRect(x: 0, y: resultHeight, width: colW, height: bodyH)
+        gutter.frame = NSRect(x: colW, y: resultHeight, width: gutterW, height: bodyH)
+        rightView.frame = NSRect(x: colW + gutterW, y: resultHeight, width: colW, height: bodyH)
+        scroller.frame = NSRect(x: w - scrollerWidth, y: resultHeight, width: scrollerWidth, height: bodyH)
         refresh()
     }
 
     // MARK: - DocumentPane の残り
 
     func reEmitState() { emitState() }
-    func focusContent() { window?.makeFirstResponder(leftView) }
+    func focusContent() { window?.makeFirstResponder(manualState == nil ? leftView : (inlineMerge?.activeEditor ?? mergeTextView)) }
     func ensureVisibleLayout() { refresh() }
 
     func applyCurrentFontSize() {
+        mergeTextView.font = EditorFont.current()
+        inlineMerge?.applyAppearance()
         for v in [leftView, rightView] { v.configure(font: EditorFont.current()) }
         needsLayout = true
         refresh()
@@ -743,6 +885,7 @@ final class DiffViewer: NSView, DocumentPane {
         refresh()
     }
     func applyDisplaySettings() {
+        inlineMerge?.applyAppearance()
         for v in [leftView, rightView] {
             v.highlightCurrentLine = false      // diff の帯と喧嘩する
             v.cursorShape = AppSettings.cursorShape

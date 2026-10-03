@@ -152,6 +152,7 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate, NSTextStor
     private var headerTopToBar: NSLayoutConstraint!
     private var scrollTopToHeader: NSLayoutConstraint!
 
+    var restoredMergeName: String?
     private(set) var fileURL: URL?
     private var encoding: DetectedEncoding = .utf8
     /// ユーザーが「開き直す」で明示したエンコード（自動判定に戻さないため、読み込み直しで引き継ぐ）。
@@ -768,6 +769,7 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate, NSTextStor
             text = String(decoding: data, as: UTF8.self)
         }
         self.fileURL = url
+        self.previewEnabled = AppSettings.shouldOpenPreview(for: url)
         self.draftID = nil          // 実ファイルを開いたペインは draft を持たない
         self.userChosenEncoding = forcedEncoding
         self.encoding = detected
@@ -852,7 +854,7 @@ final class EditableViewer: NSView, DocumentPane, NSTextViewDelegate, NSTextStor
         draftSaveTimer?.invalidate()
         draftSaveTimer = nil
         guard fileURL == nil, let id = draftID else { return }
-        draftStore.write(id: id, text: logicalText)
+        draftStore.write(id: id, text: restoredMergeName.map { MergeSideDraft(text: logicalText, side: "右侧", displayName: $0).serialized } ?? logicalText)
     }
 
     /// draft を捨てる。**ユーザーがドキュメントを閉じた（破棄した）ときだけ呼ぶ。**

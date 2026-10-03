@@ -6,6 +6,8 @@ import Foundation
 /// クリップボード）あってもコアは 1 本で済む。ファイルは mmap のまま、クリップボードは
 /// メモリ上の文字列のまま、同じ口に流れる。
 protocol DiffSource {
+    var sourceURL: URL? { get }
+    func editableSnapshot(limit: Int) -> String?
     /// 表示名（タブ名・見出し用）。
     var displayName: String { get }
     /// 行数。
@@ -28,6 +30,8 @@ protocol DiffSource {
 }
 
 extension DiffSource {
+    var sourceURL: URL? { nil }
+    func editableSnapshot(limit: Int) -> String? { nil }
     /// 値まで見るふつうの比較。
     func lineHashes() -> [LineHash] { lineHashes(mask: []) }
 }
@@ -79,6 +83,7 @@ struct LineHasher {
 
 /// ファイルを mmap して行を供給する。行の中身は要求されたときだけ読む。
 final class FileDiffSource: DiffSource {
+    let sourceURL: URL?
     let displayName: String
     private let buffer: FileBuffer
     private let index: LineIndex
@@ -92,6 +97,7 @@ final class FileDiffSource: DiffSource {
     init?(url: URL, displayName: String? = nil) {
         precondition(!Thread.isMainThread, "FileDiffSource はメインスレッドで作らない（索引の完了待ちで固まる）")
         guard let buffer = FileBuffer(url: url) else { return nil }
+        self.sourceURL = url
         self.buffer = buffer
         self.displayName = displayName ?? url.lastPathComponent
         // 判定は先頭だけ見れば足りる（10GB 全部を Data に起こしたら本末転倒）。
@@ -105,6 +111,10 @@ final class FileDiffSource: DiffSource {
     }
 
     var lineCount: Int { index.displayLineCount }
+    func editableSnapshot(limit: Int) -> String? {
+        guard buffer.count <= limit else { return nil }
+        return String(data: buffer.data(in: 0..<buffer.count), encoding: encoding.stringEncoding)
+    }
 
     func lineHashes(mask: FormatMask) -> [LineHash] {
         buffer.withBytes(in: 0..<buffer.count) {
@@ -153,10 +163,15 @@ final class FileDiffSource: DiffSource {
 
 /// 文字列を行に切って供給する。クリップボード比較と、未保存タブの比較に使う。
 final class TextDiffSource: DiffSource {
+    private let originalText: String
+    func editableSnapshot(limit: Int) -> String? { originalText.utf8.count <= limit ? originalText : nil }
+    let sourceURL: URL?
     let displayName: String
     private let lines: [String]
 
-    init(text: String, displayName: String) {
+    init(text: String, displayName: String, sourceURL: URL? = nil) {
+        originalText = text
+        self.sourceURL = sourceURL
         self.displayName = displayName
         // 末尾の改行 1 個は「行」を増やさない（ファイル側の扱いと揃える）。
         var t = text

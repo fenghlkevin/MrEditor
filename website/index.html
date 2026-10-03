@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080a0e">
+  <title>TextStack — 让复杂文本，变得清晰</title>
+  <meta name="description" content="TextStack，面向日志、结构化数据与 Markdown 的 macOS 原生编辑器。在一个工作区里阅读大文件、筛选日志、检查数据、预览文档和对比文本。">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="TextStack">
+  <meta property="og:title" content="TextStack — 让复杂文本，变得清晰">
+  <meta property="og:description" content="日志、JSON、CSV、Markdown。一个原生 Mac 工作区，让你专注于文本本身。">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到正文</a>
+  <header class="site-header">
+    <nav class="shell nav" aria-label="主导航">
+      <a class="brand" href="#" aria-label="TextStack 首页"><img src="assets/textstack-icon.png" alt="" width="38" height="38"><span>TextStack</span></a>
+      <div class="nav-links"><a href="#features">功能</a><a href="#workflow">工作流</a><a href="#faq">常见问题</a></div>
+      <a class="nav-cta" href="#release">即将发布<span class="tiny-spark" aria-hidden="true">✦</span></a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero shell" aria-labelledby="hero-title">
+      <div class="hero-halo" aria-hidden="true"></div>
+      <div class="eyebrow hero-eyebrow"><span class="apple" aria-hidden="true">⌘</span> 为 MAC 而生，为文本而造</div>
+      <h1 id="hero-title">让复杂文本，<br><span>变得清晰。</span></h1>
+      <p class="hero-copy">从一份 Markdown，到不断增长的日志。<br>阅读、筛选、预览、对比，都在一个原生工作区。</p>
+      <div class="hero-actions"><a class="button button-primary" href="#experience">探索 TextStack</a><a class="button button-secondary" href="#features">了解功能</a></div>
+      <p class="hero-note">macOS 13+ <span>·</span> 原生 Swift / AppKit <span>·</span> 下载即将开放</p>
+
+      <div class="experience" id="experience">
+        <div class="demo-tabs" role="tablist" aria-label="体验不同工作场景">
+          <button id="tab-logs" role="tab" aria-selected="true" aria-controls="demo-panel" tabindex="0" data-mode="logs"><span aria-hidden="true">≡</span> 日志阅读</button>
+          <button id="tab-markdown" role="tab" aria-selected="false" aria-controls="demo-panel" tabindex="-1" data-mode="markdown"><span aria-hidden="true">M↓</span> Markdown</button>
+          <button id="tab-json" role="tab" aria-selected="false" aria-controls="demo-panel" tabindex="-1" data-mode="json"><span aria-hidden="true">{ }</span> 结构化数据</button>
+          <button id="tab-diff" role="tab" aria-selected="false" aria-controls="demo-panel" tabindex="-1" data-mode="diff"><span aria-hidden="true">±</span> 文本对比</button>
+        </div>
+        <div class="app-window" id="demo-panel" role="tabpanel" aria-labelledby="tab-logs" tabindex="0">
+          <div class="window-chrome"><div class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></div><span class="window-title">TextStack</span><span class="window-action" aria-hidden="true">◫</span></div>
+          <div class="app-body">
+            <aside class="app-sidebar" aria-label="示例工作区"><div class="sidebar-heading">工作区 <span>＋</span></div><div class="sidebar-label">本地文件</div><div class="file-item selected" data-file="logs"><span class="file-symbol">≡</span> application.log</div><div class="file-item" data-file="markdown"><span class="file-symbol">M↓</span> release-notes.md</div><div class="file-item" data-file="json"><span class="file-symbol">{ }</span> config.json</div><div class="file-item" data-file="diff"><span class="file-symbol">±</span> config.diff</div><div class="sidebar-label remote-label">服务器</div><div class="file-item"><span class="file-symbol">▤</span> production</div><div class="sidebar-bottom"><span>本地工作区</span><span aria-hidden="true">⚙</span></div></aside>
+            <div class="editor-area"><div class="editor-toolbar"><span id="demo-filename">application.log</span><span class="toolbar-view" id="demo-view">日志视图</span></div><div class="demo-content" id="demo-content"><noscript><p class="no-script">TextStack 支持日志筛选、Markdown 预览、结构化数据检查与并排差异对比。启用 JavaScript 可切换界面示例。</p></noscript></div><div class="editor-status"><span id="demo-status">UTF-8 <b>·</b> 跟随末尾</span><span>界面示意</span></div></div>
+          </div>
+        </div>
+        <p class="demo-caption" id="demo-caption" aria-live="polite">从海量日志里，只看真正重要的那几行。</p>
+      </div>
+    </section>
+
+    <section class="format-strip shell" aria-label="支持的文本类型"><span>你每天遇到的文本，都有合适的视图。</span><div><span>LOG</span><span>JSON</span><span>CSV / TSV</span><span>MARKDOWN</span><span>YAML</span><span>NDJSON</span></div></section>
+
+    <section class="features section shell" id="features" aria-labelledby="features-title">
+      <div class="section-intro"><div class="eyebrow">LESS FRICTION. MORE FOCUS.</div><h2 id="features-title">少一点切换。<br>多一点专注。</h2><p>不必为了不同的文本，打开不同的工具。<br>让内容决定视图，让思路保持连贯。</p></div>
+      <div class="feature-grid">
+        <article><div class="feature-icon" aria-hidden="true">≡</div><h3>大文件，也能从容阅读</h3><p>按需读取与可见行绘制，配合后台搜索、实时筛选和跟随末尾，专注于日志中的线索。</p><span class="feature-detail">大文件 · 正则搜索 · 实时 grep</span></article>
+        <article><div class="feature-icon" aria-hidden="true">M↓</div><h3>写作与预览，并肩进行</h3><p>Markdown 源码与预览同步滚动。代码、公式、表格与 Mermaid 图表，边写边看。</p><span class="feature-detail">Markdown · KaTeX · Mermaid</span></article>
+        <article><div class="feature-icon" aria-hidden="true">{ }</div><h3>看清数据的结构</h3><p>展开 JSON 树，浏览 CSV 表格，逐条检查 NDJSON。让一长串文本变成可读的数据。</p><span class="feature-detail">JSON · CSV / TSV · NDJSON</span></article>
+        <article><div class="feature-icon" aria-hidden="true">±</div><h3>每一处变化，都有对应</h3><p>并排查看行级与字符级差异，逐块采纳修改。将合并结果独立保存，保留原始文件。</p><span class="feature-detail">文本对比 · 并排合并 · 差异导航</span></article>
+        <article><div class="feature-icon" aria-hidden="true">⌘</div><h3>熟悉的 Mac 手感</h3><p>原生窗口、多文档侧边栏、快捷键和 Finder 快速查看。轻松融入你习惯的工作方式。</p><span class="feature-detail">Swift / AppKit · Quick Look</span></article>
+        <article><div class="feature-icon" aria-hidden="true">⌁</div><h3>远程日志，就在手边</h3><p>通过 SSH 浏览服务器文件，按需读取日志、在服务器侧筛选，并持续跟随新的内容。</p><span class="feature-detail">SSH · 跳板机 · Keychain</span></article>
+      </div>
+    </section>
+
+    <section class="workflow section shell" id="workflow" aria-labelledby="workflow-title">
+      <div class="workflow-copy"><div class="eyebrow">FOLLOW THE SIGNAL</div><h2 id="workflow-title">日志再长，<br>线索不该被淹没。</h2><p>用关键词和正则缩小范围，保留前后文，再跟随最新输出。无论文件在本地还是远程，都能沿着线索继续查。</p><div class="workflow-points"><span><b>01</b> 打开日志</span><span><b>02</b> 筛选关键行</span><span><b>03</b> 跟随新内容</span></div></div>
+      <div class="signal-card"><div class="signal-top"><span>application.log</span><span class="signal-label">筛选视图</span></div><div class="signal-search"><span aria-hidden="true">⌕</span><code>ERROR payment</code><span class="search-option">正则</span></div><div class="signal-lines"><div><span>1284</span><code><em>ERROR</em> payment timeout<br><small>request_id=8f2a · retry=1</small></code></div><div><span>1291</span><code><em>ERROR</em> payment declined<br><small>request_id=8f3c · status=402</small></code></div><div><span>1308</span><code><em>ERROR</em> payment timeout<br><small>request_id=8f41 · retry=2</small></code></div></div><div class="signal-bottom"><span class="follow-dot" aria-hidden="true"></span>跟随末尾 <kbd>⌥ ⌘ F</kbd></div></div>
+    </section>
+
+    <section class="preview-section section shell" aria-labelledby="preview-title"><div class="preview-image"><img src="assets/markdown-preview.png" alt="TextStack Markdown 渲染器的真实测试截图，包含目录、公式、流程图、代码高亮和表格" width="1700" height="1920" loading="lazy"><span class="image-label">Markdown 渲染器 · 真实测试截图</span></div><div class="preview-copy"><div class="eyebrow">WORDS INTO SHAPE</div><h2 id="preview-title">想法写下来。<br>结构看得见。</h2><p>一份技术文档，可以同时有文字、公式与流程图。TextStack 将它们放在源码旁，让编辑和阅读成为同一件事。</p><div class="preview-tags"><span>代码高亮</span><span>公式渲染</span><span>流程图</span><span>同步滚动</span></div><p class="small-note">预览资源随应用提供。普通文档预览无需联网。</p></div></section>
+
+    <section class="native-section shell" aria-labelledby="native-title"><div class="native-mark" aria-hidden="true">⌘</div><div class="eyebrow">BUILT FOR YOUR MAC</div><h2 id="native-title">文本工作区。<br>原生，也自然。</h2><p>支持简体中文、英文和日文界面。<br>文件、草稿与工作节奏，留在你熟悉的 Mac 上。</p><div class="native-meta"><span>Swift / AppKit</span><span>macOS 13+</span><span>浅色 / 深色外观</span></div></section>
+
+    <section class="faq section shell" id="faq" aria-labelledby="faq-title"><div><div class="eyebrow">A FEW THINGS TO KNOW</div><h2 id="faq-title">常见问题</h2></div><div class="faq-list"><details><summary>TextStack 适合处理哪些文件？<span aria-hidden="true">＋</span></summary><p>它主要面向日志、结构化数据和 Markdown，也支持日常文本与代码阅读。日志筛选、数据检查器、实时预览和文本对比，分别对应不同的工作场景。</p></details><details><summary>需要什么系统？<span aria-hidden="true">＋</span></summary><p>TextStack 是 macOS 原生应用，最低系统版本为 macOS 13。它使用 Swift 与 AppKit 构建。</p></details><details><summary>使用时需要联网吗？<span aria-hidden="true">＋</span></summary><p>本地文本编辑、数据检查和普通 Markdown 预览不需要联网。连接 SSH 服务器、检查更新或使用自行配置的 AI 服务时需要网络。</p></details><details><summary>大文件也能使用 Markdown 预览吗？<span aria-hidden="true">＋</span></summary><p>分栏预览面向不超过 8 MiB 的文件；更大的文件使用大文件编辑器。表格、文本预览和 Finder 快速查看也有各自的内容限制。</p></details><details><summary>现在可以下载或购买吗？<span aria-hidden="true">＋</span></summary><p>公开下载尚未开放，价格与购买方式也尚未公布。发布后，这个页面会提供正式下载与购买入口。</p></details></div></section>
+
+    <section class="release-section shell" id="release" aria-labelledby="release-title"><div class="release-glow" aria-hidden="true"></div><img src="assets/textstack-icon.png" alt="" width="82" height="82" loading="lazy"><div class="eyebrow">YOUR NEXT TEXT WORKSPACE</div><h2 id="release-title">为下一次专注，<br>准备一个好工具。</h2><p>TextStack 正在准备公开发布。</p><button class="button release-button" disabled>下载即将开放</button><span class="release-note">macOS 13+ · 敬请期待</span></section>
+  </main>
+  <footer class="shell footer"><a class="brand" href="#"><img src="assets/textstack-icon.png" alt="" width="30" height="30"><span>TextStack</span></a><span>让复杂文本，变得清晰。</span><span>© 2026 TextStack</span></footer>
+</body>
+</html>

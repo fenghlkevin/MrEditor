@@ -27,9 +27,9 @@
       "pattern": "download(?:\\.ja)?\\.html\\?v=([\\d.]+)"
     },
     {
-      "name": "README(en)",
+      "name": "README(zh-Hans)",
       "path": "README.md",
-      "pattern": "MrEditor-([\\d.]+)\\.dmg"
+      "pattern": "当前源码版本：([\\d.]+)"
     },
     {
       "name": "README(ja)",

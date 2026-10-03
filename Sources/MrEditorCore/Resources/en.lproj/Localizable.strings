@@ -649,3 +649,34 @@
 "markdown.basicPreview" = "Basic preview — enhanced renderer unavailable.";
 
 "about.licenses" = "Open-source licenses";
+
+"diff.manualMerge" = "Side-by-side Editing";
+"diff.useRight" = "Use Right";
+"diff.useLeft" = "Use Left";
+
+"prefs.preview.types" = "File types that open with a preview";
+"prefs.preview.hint" = "Separate extensions with commas, e.g. md, markdown, json, html. * includes all supported types; leave empty to disable automatic preview. Applies when opening files; preview can still be toggled manually.";
+
+"doc.mergeDraft" = "Merge Draft";
+"doc.namedMergeDraft" = "%@ · Merge Draft";
+
+// Feature discovery and offline guide
+"menu.preview" = "Preview";
+"menu.jsonInspector" = "JSON Inspector…";
+"menu.filterLines" = "Filter Matching Lines";
+"menu.sidebar" = "Show / Hide Sidebar";
+"menu.tools" = "Tools";
+"menu.jsonFormat" = "Format JSON into New Document…";
+"menu.sshTools" = "SSH Investigation";
+"menu.remoteReconnect" = "Reconnect / Refresh";
+"menu.remoteCompanion" = "Open Companion Window";
+"menu.remoteAnalyze" = "Analyze Loaded Logs…";
+"menu.remoteFollow" = "Follow Remote Log";
+"menu.remoteAutoReconnect" = "Automatically Reconnect (up to 3 times)";
+"menu.exportSettings" = "Export Appearance…";
+"menu.importSettings" = "Import Appearance…";
+"menu.copySettingsLink" = "Copy Appearance Link";
+"menu.importSettingsLink" = "Import Appearance Link from Clipboard…";
+"menu.userGuide" = "TextStack User Guide (Chinese)";
+"menu.previewOnly" = "Preview Only / Show Source";
+"menu.lineWrap" = "Wrap Lines";

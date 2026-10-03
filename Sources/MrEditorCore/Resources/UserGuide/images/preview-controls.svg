@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="500" viewBox="0 0 1100 500">
+<rect width="1100" height="500" rx="18" fill="#eef3fa"/>
+<g font-family="PingFang SC,Arial,sans-serif">
+<text x="35" y="48" font-size="27" font-weight="600" fill="#203b60">预览与 Markdown 导出</text>
+<text x="35" y="78" font-size="16" fill="#526983">界面示意 · 按当前功能核对 · 编号对应操作顺序</text>
+<rect x="30" y="98" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="132" font-size="21" fill="#253d59">1. 左侧源码编辑 ↔ 右侧渲染预览</text>
+<rect x="30" y="160" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="194" font-size="21" fill="#253d59">2. 预览查找：回车下一处 · Shift 回车上一处</text>
+<rect x="30" y="222" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="256" font-size="21" fill="#253d59">3. 目录跳转 · &lt;&gt; 查看源码 · 仅预览 / 分栏 · 关闭</text>
+<rect x="30" y="284" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="318" font-size="21" fill="#253d59">4. 通用设置：默认预览类型 md,json / * / 留空</text>
+<rect x="30" y="346" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="380" font-size="21" fill="#253d59">5. 格式 → Markdown 导出：HTML / PDF / PNG</text>
+<rect x="30" y="408" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="442" font-size="21" fill="#253d59">6. 检查本地图片 → 打开成品 → 核对分页和完整性</text>
+</g></svg>

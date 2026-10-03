@@ -16,6 +16,65 @@ import AppKit
 public final class RemoteWindowController: NSWindowController, NSWindowDelegate {
 
     var currentSession: RemoteSession? { session }
+    var loadedLogText: String { lines.map(\.text).joined(separator: "\n") }
+    func revealLoadedRow(_ row: Int) { guard lines.indices.contains(row) else { return }; table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false); table.scrollRowToVisible(row) }
+    var menuCanReconnect: Bool { currentSession != nil && reconnectButton.isEnabled }
+    var menuCanFollow: Bool { currentSession != nil && followButton.isEnabled }
+    var menuIsFollowing: Bool { follower != nil }
+    var menuAutoReconnect: Bool { autoReconnect.state == .on }
+    func menuReconnect() { reconnect() }
+    func menuOpenCompanion() { openCompanion() }
+    func menuAnalyze() { analyzeLoaded() }
+    func menuToggleFollow() { toggleFollow() }
+    func menuToggleAutoReconnect() { autoReconnect.state = autoReconnect.state == .on ? .off : .on; reconnectPreferenceChanged() }
+    private var companionWindows: [RemoteWindowController] = []
+    private var analysisWindows: [LogAnalysisWindowController] = []
+    private let autoReconnect = NSButton(checkboxWithTitle: "跟随中断后自动重连（最多 3 次）", target: nil, action: nil)
+    private var reconnectTask: DispatchWorkItem?
+    private var reconnectAttempts = 0
+    private var connectionRevision = 0
+    private lazy var analysisButton = NSButton(title: "分析已加载日志…", target: self, action: #selector(analyzeLoaded))
+    @objc private func analyzeLoaded() {
+        let snapshot = loadedLogText
+        let controller = LogAnalysisWindowController(title: fileTitle + "（仅已加载内容）", loader: { Data(snapshot.utf8) })
+        controller.onReveal = { [weak self] row in self?.revealLoadedRow(row - 1) }
+        analysisWindows.removeAll { $0.window?.isVisible != true }; analysisWindows.append(controller); controller.showWindow(nil)
+    }
+    private func cancelReconnect() { reconnectTask?.cancel(); reconnectTask = nil }
+    @objc private func reconnectPreferenceChanged() { if autoReconnect.state != .on { cancelReconnect() } }
+    private func scheduleReconnect(for current: RemoteSession) {
+        guard autoReconnect.state == .on, reconnectAttempts < 3 else { return }
+        reconnectAttempts += 1
+        status("跟随中断，\(reconnectAttempts * 2) 秒后自动重连（第 \(reconnectAttempts) / 3 次）")
+        let task = DispatchWorkItem { [weak self] in
+            guard let self, self.session === current, self.autoReconnect.state == .on else { return }
+            self.reconnectTask = nil; self.reconnectSession(follow: true, automatic: true)
+        }
+        reconnectTask = task; DispatchQueue.main.asyncAfter(deadline: .now() + Double(reconnectAttempts * 2), execute: task)
+    }
+    private lazy var reconnectButton = NSButton(title: "重连 / 刷新", target: self, action: #selector(reconnect))
+    private lazy var companionButton = NSButton(title: "独立窗口", target: self, action: #selector(openCompanion))
+    @objc private func reconnect() {
+        guard session != nil else { return }
+        let wasFollowing = follower != nil || reconnectTask != nil
+        reconnectAttempts = 0; cancelReconnect(); reconnectSession(follow: wasFollowing)
+    }
+    private func reconnectSession(follow wasFollowing: Bool, automatic: Bool = false) {
+        guard let current = session else { return }
+        stopFollowing(); let revision = connectionRevision
+        reconnectButton.isEnabled = false; followButton.isEnabled = false; busy(true)
+        work.async { [weak self] in
+            do {
+                let next = try current.transport.map { try RemoteSession.connect(using: $0, requireFile: false).selectingFile(current.target.path) } ?? RemoteSession.connect(to: current.target)
+                DispatchQueue.main.async { guard let self, self.session === current, self.connectionRevision == revision else { return }; self.reconnectButton.isEnabled = true; self.open(session: next, follow: wasFollowing && (!automatic || self.autoReconnect.state == .on)) }
+            } catch { DispatchQueue.main.async { guard let self, self.session === current, self.connectionRevision == revision else { return }; self.reconnectButton.isEnabled = true; self.followButton.isEnabled = current.capabilities.canFollow; self.busy(false); self.status(error.localizedDescription); if wasFollowing { self.scheduleReconnect(for: current) } } }
+        }
+    }
+    @objc private func openCompanion() {
+        guard let session else { return }
+        companionWindows.removeAll { $0.window?.isVisible != true }
+        let reader = RemoteWindowController(); companionWindows.append(reader); reader.showWindow(nil); reader.open(session: session, follow: false)
+    }
     var onTitleChange: (() -> Void)?
     var onDisconnect: (() -> Void)?
     private weak var embeddedContent: NSView?
@@ -34,7 +93,7 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
         return content
     }
     func shutdown() {
-        searchRevision += 1; stopFollowing(); session = nil
+        searchRevision += 1; cancelReconnect(); stopFollowing(); session = nil
         filePicker?.close(); filePicker = nil
     }
     func focusContent() { focusList() }
@@ -150,7 +209,7 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
         scroll.autohidesScrollers = true
 
         chooseFileButton.isHidden = true
-        let topRow = NSStackView(views: [addressField, chooseFileButton, openButton])
+        let topRow = NSStackView(views: [addressField, chooseFileButton, reconnectButton, companionButton, openButton])
         topRow.orientation = .horizontal
         topRow.spacing = 8
         addressField.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -182,7 +241,9 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
         let footer = NSStackView(views: [statusLabel, footerSpace, metadata]); footer.spacing = 16
         statusLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let divider = NSBox(); divider.boxType = .separator
-        let stack = NSStackView(views: [topRow, searchRow, divider, scroll, footer])
+        autoReconnect.target = self; autoReconnect.action = #selector(reconnectPreferenceChanged)
+        let investigationRow = NSStackView(views: [autoReconnect, analysisButton]); investigationRow.spacing = 16
+        let stack = NSStackView(views: [topRow, searchRow, investigationRow, divider, scroll, footer])
         stack.alignment = .leading
         stack.orientation = .vertical
         stack.spacing = 14
@@ -266,7 +327,7 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
         addressField.font = .systemFont(ofSize: 12, weight: .medium)
         addressField.textColor = .secondaryLabelColor
         addressField.toolTip = addressField.stringValue
-        metadata.stringValue = "SSH · UTF-8 · " + L("workspace.readOnly")
+        metadata.stringValue = "SSH · UTF-8 · " + L("workspace.readOnly") + (session?.capabilities.hasTailRotation == true ? " · 轮转跟随" : " · 服务器不支持轮转跟随")
         connectionButton.title = L("ssh.disconnect")
         connectionButton.action = #selector(disconnect)
         connectionButton.keyEquivalent = ""
@@ -393,6 +454,7 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
     /// 追い始めたら絞り込みは解いて末尾へ戻す ―― 絞った一覧に新着を足すと、
     /// 一致していない行が混ざって、**絞り込みの意味が壊れる。**
     @objc private func toggleFollow() {
+        cancelReconnect()
         if follower != nil { return stopFollowing() }
         guard let session else { return }
 
@@ -405,12 +467,13 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
         let f = RemoteFollower(session: session)
         f.onLines = { [weak self, weak f] incoming in
             guard let self, let f, self.follower === f else { return }
-            self.appendFollowed(incoming)
+            self.reconnectAttempts = 0; self.appendFollowed(incoming)
         }
         f.onEnd = { [weak self, weak f] in
             guard let self, let f, self.follower === f else { return }
             self.stopFollowing()
             self.status(L("remote.followEnded"))
+            self.scheduleReconnect(for: session)
         }
         follower = f
         followButton.title = L("workspace.live")
@@ -422,6 +485,8 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
     }
 
     private func stopFollowing() {
+        connectionRevision += 1; reconnectButton.isEnabled = true; followButton.isEnabled = session?.capabilities.canFollow ?? false
+        busy(false); cancelReconnect()
         follower?.stop()
         follower = nil
         followButton.title = L("remote.follow")
@@ -433,15 +498,17 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
     /// 届いた行を末尾へ足す。**行番号は前の行から数える**（向こうへ訊き直さない）。
     private func appendFollowed(_ incoming: [String]) {
         guard !incoming.isEmpty else { return }
-        var next = lines.last?.number.map { $0 + 1 }
+        // Rotation / truncation makes global line numbers unreliable; never invent them.
+        var next: Int? = session?.capabilities.hasTailRotation == true ? nil : lines.last?.number.map { $0 + 1 }
         for text in incoming {
             lines.append(RemoteLine(number: next, isMatch: false, text: text))
             if let n = next { next = n + 1 }
         }
         if let last = lines.last?.number { totalLines = last }
+        if lines.count > 20000 { lines.removeFirst(lines.count - 20000) }
         table.reloadData()
         scrollToBottom()
-        status(L("remote.following"))
+        status(L("remote.following") + " · 最多保留 20000 行")
     }
 
     // MARK: - 手元へ持っていく
@@ -483,7 +550,7 @@ public final class RemoteWindowController: NSWindowController, NSWindowDelegate 
         statusLabel.stringValue = text
         statusLabel.toolTip = text
         if session != nil {
-            metadata.stringValue = "SSH · UTF-8 · " + L("workspace.readOnly") + " · " + L("workspace.visibleLines", lines.count)
+            metadata.stringValue = "SSH · UTF-8 · " + L("workspace.readOnly") + (session?.capabilities.hasTailRotation == true ? " · 轮转跟随" : " · 服务器不支持轮转跟随") + " · " + L("workspace.visibleLines", lines.count)
         }
     }
 

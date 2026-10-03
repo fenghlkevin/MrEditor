@@ -639,3 +639,34 @@
 "markdown.basicPreview" = "基础预览：增强渲染器暂不可用。";
 
 "about.licenses" = "开源许可";
+
+"diff.manualMerge" = "并排编辑";
+"diff.useRight" = "使用右侧";
+"diff.useLeft" = "采纳左侧";
+
+"prefs.preview.types" = "默认打开右侧预览的文件类型";
+"prefs.preview.hint" = "用逗号分隔扩展名，例如 md, markdown, json, html。* 表示所有支持预览的类型；留空表示默认不打开。下次打开文件时生效，仍可手动切换预览。";
+
+"doc.mergeDraft" = "合并草稿";
+"doc.namedMergeDraft" = "%@ · 合并草稿";
+
+// Feature discovery and offline guide
+"menu.preview" = "预览";
+"menu.jsonInspector" = "JSON 结构检查器…";
+"menu.filterLines" = "筛选匹配行";
+"menu.sidebar" = "显示 / 隐藏侧栏";
+"menu.tools" = "工具";
+"menu.jsonFormat" = "JSON 格式化为新文档…";
+"menu.sshTools" = "SSH 排查";
+"menu.remoteReconnect" = "重连 / 刷新";
+"menu.remoteCompanion" = "打开独立窗口";
+"menu.remoteAnalyze" = "分析已加载日志…";
+"menu.remoteFollow" = "跟随远程日志末尾";
+"menu.remoteAutoReconnect" = "中断后自动重连（最多 3 次）";
+"menu.exportSettings" = "导出外观设置…";
+"menu.importSettings" = "导入外观设置…";
+"menu.copySettingsLink" = "复制外观分享链接";
+"menu.importSettingsLink" = "从剪贴板导入外观链接…";
+"menu.userGuide" = "TextStack 功能使用说明";
+"menu.previewOnly" = "仅预览 / 显示源码";
+"menu.lineWrap" = "自动换行";

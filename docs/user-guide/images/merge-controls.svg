@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="500" viewBox="0 0 1100 500">
+<rect width="1100" height="500" rx="18" fill="#eef3fa"/>
+<g font-family="PingFang SC,Arial,sans-serif">
+<text x="35" y="48" font-size="27" font-weight="600" fill="#203b60">比较与合并</text>
+<text x="35" y="78" font-size="16" fill="#526983">界面示意 · 按当前功能核对 · 编号对应操作顺序</text>
+<rect x="30" y="98" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="132" font-size="21" fill="#253d59">1. 来源：文件 / 已打开文档 / 剪贴板 / URL</text>
+<rect x="30" y="160" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="194" font-size="21" fill="#253d59">2. 左侧原文（只读） ↔ 右侧合并结果（可编辑）</text>
+<rect x="30" y="222" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="256" font-size="21" fill="#253d59">3. 中间箭头采纳差异 · 下一处 / 上一处差异</text>
+<rect x="30" y="284" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="318" font-size="21" fill="#253d59">4. 文本变化后重新计算，再继续采纳差异</text>
+<rect x="30" y="346" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="380" font-size="21" fill="#253d59">5. 大输入：流式差异；并排合并编辑：独立编辑流程</text>
+<rect x="30" y="408" width="1040" height="53" rx="9" fill="white" stroke="#cedced"/>
+<text x="48" y="442" font-size="21" fill="#253d59">6. 保存独立合并结果 → 重开核对；草稿恢复后仍需保存</text>
+</g></svg>

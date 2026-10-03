@@ -32,7 +32,8 @@ let package = Package(
                 .process("Resources/ja.lproj"),
                 .process("Resources/zh-Hans.lproj"),
                 .process("Resources/AppIcon.icns"),
-                .copy("Resources/MarkdownPreview")
+                .copy("Resources/MarkdownPreview"),
+                .copy("Resources/UserGuide")
             ]
         ),
         .executableTarget(

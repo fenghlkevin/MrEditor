@@ -1,0 +1,11 @@
+{
+  "name": "textstack-website",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "build": "node scripts/build.mjs",
+    "deploy": "npx wrangler pages deploy dist --project-name textstack --branch main"
+  }
+}

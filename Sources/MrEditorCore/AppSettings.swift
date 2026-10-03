@@ -137,6 +137,22 @@ struct SessionState: Codable {
 /// アプリの永続設定（UserDefaults 集約）。
 enum AppSettings {
     private static let defaults = UserDefaults.standard
+    static var defaultPreviewFileTypes: String {
+        get { defaults.string(forKey: "defaultPreviewFileTypes") ?? "*" }
+        set { defaults.set(newValue, forKey: "defaultPreviewFileTypes") }
+    }
+
+    static func shouldOpenPreview(for url: URL, types: String? = nil) -> Bool {
+        guard DocumentPreviewFormat.kind(for: url) != nil else { return false }
+        let entries = (types ?? defaultPreviewFileTypes).lowercased()
+            .components(separatedBy: CharacterSet(charactersIn: ",，;； \n\t"))
+            .filter { !$0.isEmpty }
+        let ext = url.pathExtension.lowercased()
+        let name = url.lastPathComponent.lowercased()
+        return entries.contains { entry in
+            entry == "*" || entry == name || (!ext.isEmpty && entry.replacingOccurrences(of: "*.", with: "").trimmingCharacters(in: CharacterSet(charactersIn: ".")) == ext)
+        }
+    }
     private static let saveProgressKey = "MrEditor.saveProgressStyle"
     private static let lineWrapKey = "MrEditor.lineWrap"
     private static let tabWidthKey = "MrEditor.tabWidth"

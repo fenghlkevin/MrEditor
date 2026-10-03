@@ -154,6 +154,7 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         // サイドバー（開いているドキュメント一覧）
         sidebar.translatesAutoresizingMaskIntoConstraints = false
+        sidebar.onCompare = { [weak self] indices in self?.compareDocuments(at: indices) }
         sidebar.onSelect = { [weak self] i in self?.activate(i) }
         sidebar.onClose = { [weak self] i in self?.closeDocument(at: i) }
         sidebar.onConnection = { [weak self] connection in self?.openServer(connection) }
@@ -497,6 +498,103 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
         return PieceTableViewer()
     }
 
+    private var processingWindows: [DataProcessingWindowController] = []
+    var canProcessData: Bool { activeViewer != nil && !(activeViewer is RemotePane) }
+    func showDataProcessing(timeRange: Bool) {
+        guard let pane = activeViewer, !(pane is RemotePane) else { return }
+        let text = pane.restorableText, provider = pane.inspectorDataProvider(), url = pane.fileURL
+        let encoding = pane.currentEncoding
+        // Text and piece-table providers capture current edits on the main thread.
+        let controller = DataProcessingWindowController(kind: timeRange ? .timeRange : .csv, sourceURL: url) {
+            if let text { return Data(text.utf8) }
+            let data: Data
+            if let provider { data = try provider { false } }
+            else if let url { data = try Data(contentsOf: url, options: .alwaysMapped) }
+            else { data = Data() }
+            if encoding == .utf8 { return data }
+            guard data.count <= 64 * 1024 * 1024 else {
+                throw ProcessingError(message: "非 UTF-8 文件超过 64 MiB，请先另存为 UTF-8 后处理")
+            }
+            guard let text = String(data: data, encoding: encoding.stringEncoding) else {
+                throw ProcessingError(message: "无法按当前编码读取内容，请确认文件编码")
+            }
+            return Data(text.utf8)
+        }
+        controller.onExported = { [weak self] url in self?.open(url: url) }
+        processingWindows.removeAll { $0.window?.isVisible != true }
+        processingWindows.append(controller); controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+    }
+
+    private var featureWindows: [NSWindowController] = []
+    private func presentFeature(_ controller: NSWindowController) {
+        featureWindows.removeAll { $0.window?.isVisible != true }
+        featureWindows.append(controller); controller.showWindow(nil); controller.window?.makeKeyAndOrderFront(nil)
+    }
+    func showFolderSearch() {
+        let controller = FolderSearchWindowController()
+        controller.onReveal = { [weak self] url, line in self?.open(url: url, line: line) }
+        controller.openPaths = { [weak self] in Set(self?.viewers.compactMap { $0.fileURL?.resolvingSymlinksInPath().path } ?? []) }
+        presentFeature(controller)
+    }
+    /// Capture unsaved edits/providers on main, decode file bytes off main.
+    private func featureDataLoader() -> (() throws -> Data)? {
+        guard let pane = activeViewer else { return nil }
+        if let remote = pane as? RemotePane {
+            let text = remote.reader.loadedLogText
+            return { Data(text.utf8) }
+        }
+        let text = pane.restorableText, provider = pane.inspectorDataProvider(), url = pane.fileURL, encoding = pane.currentEncoding
+        return {
+            if let text { return Data(text.utf8) }
+            let data: Data
+            if let provider { data = try provider { false } }
+            else if let url { data = try Data(contentsOf: url, options: .alwaysMapped) }
+            else { data = Data() }
+            if encoding == .utf8 { return data }
+            guard data.count <= 64 * 1024 * 1024, let decoded = String(data: data, encoding: encoding.stringEncoding) else { throw ProcessingError(message: "非 UTF-8 文件超过 64 MiB 或无法解码，请先另存为 UTF-8") }
+            return Data(decoded.utf8)
+        }
+    }
+    func showLogAnalysis() {
+        guard let pane = activeViewer, let loader = featureDataLoader() else { return }
+        let remote = pane as? RemotePane
+        let controller = LogAnalysisWindowController(title: displayName(of: pane) + (remote == nil ? "" : "（仅已加载内容）"), loader: loader)
+        controller.sourceURL = pane.fileURL
+        controller.onReveal = { [weak self, weak pane] line in
+            guard let self, let pane, let index = self.viewers.firstIndex(where: { $0 === pane }) else { return }
+            self.activate(index); if let remote = pane as? RemotePane { remote.reader.revealLoadedRow(line - 1) } else { pane.goToLine(line) }
+            self.window?.makeKeyAndOrderFront(nil)
+        }
+        controller.onExported = { [weak self] url in self?.open(url: url) }
+        presentFeature(controller)
+    }
+    func showCharacterInspector() {
+        guard let pane = activeViewer, let loader = featureDataLoader() else { return }
+        let selection = pane.selectedText
+        presentFeature(CharacterInspectorWindowController {
+            if let selection, !selection.isEmpty { return selection }
+            let data = try loader()
+            guard data.count <= 64 * 1024 * 1024, let text = String(data: data, encoding: .utf8) else { throw ProcessingError(message: "内容超过 64 MiB 或 UTF-8 无效，请检查选区 / 编码") }
+            return text
+        })
+    }
+    var canExportMarkdown: Bool {
+        guard let pane = activeViewer, !(pane is RemotePane) else { return false }
+        return pane.fileURL == nil || DocumentPreviewFormat.kind(for: pane.fileURL) == "markdown"
+    }
+    func showMarkdownExport() {
+        guard canExportMarkdown, let pane = activeViewer, let loader = featureDataLoader() else { return }
+        let url = pane.fileURL
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                let data = try loader()
+                guard data.count <= 8 * 1024 * 1024, let source = String(data: data, encoding: .utf8) else { throw ProcessingError(message: "Markdown 导出支持不超过 8 MiB 的 UTF-8 内容") }
+                DispatchQueue.main.async { self?.presentFeature(MarkdownExportWindowController(source: source, url: url)) }
+            } catch { DispatchQueue.main.async { let alert = NSAlert(); alert.messageText = error.localizedDescription; alert.runModal() } }
+        }
+    }
+
     private var inspectorRefresh: DispatchWorkItem?
     private var inspectorRevision = 0
     private var jsonInspector: JSONInspectorView?
@@ -512,6 +610,13 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
         if jsonSourcePane?.superview === viewerContainer { jsonSourceTrailing?.isActive = true }
         jsonSourceTrailing = nil; jsonSourcePane = nil
     }
+    var activeRemoteReader: RemoteWindowController? { (activeViewer as? RemotePane)?.reader }
+    var canShowPreview: Bool { activeViewer?.supportsMarkdownPreview ?? false }
+    var menuPreviewVisible: Bool { (activeViewer as? EditableViewer)?.markdownPreviewVisible ?? false }
+    var menuPreviewOnly: Bool { (activeViewer as? EditableViewer)?.previewOnly ?? false }
+    func menuTogglePreview() { guard canShowPreview else { return }; closeJSONInspector(); (activeViewer as? EditableViewer)?.toggleMarkdownPreview() }
+    func menuTogglePreviewOnly() { guard canShowPreview else { return }; closeJSONInspector(); activeViewer?.setMarkdownPreviewVisible(true); (activeViewer as? EditableViewer)?.togglePreviewOnly() }
+    func showJSONInspector() { presentJSONInspector() }
     @objc func toolbarJSONFormat(_ sender: Any?) { presentJSONInspector(formatImmediately: true) }
     private func presentJSONInspector(formatImmediately: Bool = false) {
         guard let pane = activeViewer, !(pane is RemotePane) else { return }
@@ -780,7 +885,9 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
                 if fm.fileExists(atPath: path) { open(url: URL(fileURLWithPath: path)) }
             case .draft(let id, let dirty):
                 guard let text = draftStore.read(id: id) else { continue }
-                restoreDraft(id: id, text: text, dirty: dirty)
+                let merge = MergeSideDraft.decode(text)
+                restoreDraft(id: id, text: merge?.text ?? text, dirty: dirty,
+                             name: merge.map { $0.displayName ?? "" })
             }
         }
         if launchOpened > 0 {
@@ -795,10 +902,11 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// 未保存の新規ドキュメントを draft の本文つきで復元してサイドバーに追加する。
-    private func restoreDraft(id: String, text: String, dirty: Bool) {
+    private func restoreDraft(id: String, text: String, dirty: Bool, name: String? = nil) {
         let v = EditableViewer()
         v.draftStore = draftStore
         install(v)
+        v.restoredMergeName = name
         v.restoreDraft(id: id, text: text, dirty: dirty)
         viewers.append(v)
         reloadSidebar()
@@ -809,7 +917,12 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func displayName(of v: DocumentPane) -> String {
         if let remote = v as? RemotePane { return remote.title }
         if let d = v as? DiffViewer { return d.displayTitle }   // diff は 1 ファイルに属さない
-        return v.fileURL?.lastPathComponent ?? L("doc.untitled")
+        if let url = v.fileURL { return url.lastPathComponent }
+        if let name = (v as? EditableViewer)?.restoredMergeName {
+            return name.isEmpty || name == L("doc.untitled")
+                ? L("doc.mergeDraft") : L("doc.namedMergeDraft", name)
+        }
+        return L("doc.untitled")
     }
 
     // MARK: - diff（3 つの入口とも、ここに集まる）
@@ -881,6 +994,7 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// 入口 2: 開いているタブ 2 つ（アクティブと、その 1 つ前）を比べる。
     /// 未保存のタブも本文で比べられる（ディスク上のファイルでなく、いま見えているものを比べる）。
     func compareOpenDocuments() {
+        if sidebar.selectedIndices.count == 2 { compareDocuments(at: sidebar.selectedIndices.sorted()); return }
         let comparable = viewers.enumerated().filter { !($0.element is DiffViewer) }
         guard comparable.count >= 2 else { NSSound.beep(); return }
         let chooser = NSAlert(); chooser.messageText = L("diff.pickDocuments")
@@ -898,6 +1012,13 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         let pick = [comparable[left.indexOfSelectedItem].element, comparable[right.indexOfSelectedItem].element]
         // 未保存の本文はメインスレッドで先に取る（ペインの状態はメインでしか触れない）。
+        compareDocuments(at: pick.compactMap { pane in viewers.firstIndex { $0 === pane } })
+    }
+
+    private func compareDocuments(at indices: [Int]) {
+        guard indices.count == 2, indices.allSatisfy({ viewers.indices.contains($0) }),
+              indices.allSatisfy({ !(viewers[$0] is DiffViewer) }) else { NSSound.beep(); return }
+        let pick = indices.map { viewers[$0] }
         let recipes = pick.map { diffRecipe(for: $0) }
         let title = "\(displayName(of: pick[0])) ↔ \(displayName(of: pick[1]))"
         openDiff(title: title) {
@@ -987,7 +1108,8 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func diffRecipe(for pane: DocumentPane) -> DiffRecipe {
         let name = displayName(of: pane)
         if let text = pane.restorableText, pane.isDirty || pane.fileURL == nil {
-            return DiffRecipe { TextDiffSource(text: text, displayName: name) }
+            let sourceURL = pane.fileURL
+            return DiffRecipe { TextDiffSource(text: text, displayName: name, sourceURL: sourceURL) }
         }
         if let url = pane.fileURL {
             return DiffRecipe { FileDiffSource(url: url) }
@@ -1127,12 +1249,13 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - AI（BYOK・単発解析。選択範囲＝コンテキストに収まる分だけを扱う）
 
     /// AI パネルを開けるか（ドキュメントがあれば常に。選択の有無はパネル内で案内する）。
-    var canAIDiagnose: Bool { hasActiveDocument }
+    var canAIDiagnose: Bool { AppInfo.aiFeaturesEnabled && hasActiveDocument }
 
     /// AI パネルを表示（常駐）し、いま選択している本文の原因を推測させて結果を出す。
     /// パネルの「解析」ボタン・⌘⌥E・メニューの共通の入口。選択が無ければ淡いヒントを出す。
     /// 答えは書かれる端から流し込む（ストリーミング）＝待ち時間が「進んでいる」に変わる。
     func diagnoseSelectionWithAI() {
+        guard AppInfo.aiFeaturesEnabled else { return }
         showAIPanel()
         aiStream?.cancel()                      // 解析し直し・連打では前の流れを捨てる
         aiStream = nil

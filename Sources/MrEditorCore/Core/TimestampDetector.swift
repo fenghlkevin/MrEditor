@@ -295,6 +295,7 @@ public struct TimestampDetector {
         let head = p
         var value = 0
         while p < b.count, isDigit(b[p]) {
+            guard p - head < 13 else { return nil }
             value = value * 10 + Int(b[p] - 48)
             p += 1
         }

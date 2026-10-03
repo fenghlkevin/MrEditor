@@ -649,3 +649,34 @@
 "markdown.basicPreview" = "基本プレビュー — 拡張レンダラーを読み込めませんでした。";
 
 "about.licenses" = "オープンソースライセンス";
+
+"diff.manualMerge" = "手動マージ";
+"diff.useRight" = "右側を採用";
+"diff.useLeft" = "左側を採用";
+
+"prefs.preview.types" = "右側のプレビューを自動表示するファイル形式";
+"prefs.preview.hint" = "拡張子をカンマで区切ります（例: md, markdown, json, html）。* は対応するすべての形式、空欄は自動表示なし。次にファイルを開くときに適用され、手動で切り替えられます。";
+
+"doc.mergeDraft" = "マージの下書き";
+"doc.namedMergeDraft" = "%@ · マージの下書き";
+
+// Feature discovery and offline guide
+"menu.preview" = "プレビュー";
+"menu.jsonInspector" = "JSON インスペクタ…";
+"menu.filterLines" = "一致行を絞り込む";
+"menu.sidebar" = "サイドバー表示 / 非表示";
+"menu.tools" = "ツール";
+"menu.jsonFormat" = "JSON を新規文書に整形…";
+"menu.sshTools" = "SSH 調査";
+"menu.remoteReconnect" = "再接続 / 更新";
+"menu.remoteCompanion" = "独立ウインドウを開く";
+"menu.remoteAnalyze" = "読み込み済みログを解析…";
+"menu.remoteFollow" = "リモートログを追従";
+"menu.remoteAutoReconnect" = "自動再接続（最大 3 回）";
+"menu.exportSettings" = "外観設定を書き出す…";
+"menu.importSettings" = "外観設定を読み込む…";
+"menu.copySettingsLink" = "外観共有リンクをコピー";
+"menu.importSettingsLink" = "クリップボードから外観リンクを読み込む…";
+"menu.userGuide" = "TextStack 使用ガイド（中国語）";
+"menu.previewOnly" = "プレビューのみ / ソース表示";
+"menu.lineWrap" = "行の折り返し";

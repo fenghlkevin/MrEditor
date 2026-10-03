@@ -42,12 +42,12 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate {
     /// 「顔」のコストには数えない。区切りを挟んで、その右が本体。
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [.mrSidebar, .space,
-         .mrStructured, .mrFilter, .mrCompare, .mrFollow, .mrAIDiagnose]
+         .mrStructured, .mrFilter, .mrCompare, .mrFollow]
     }
 
     /// カスタマイズのパレットに載る全部。既定に無いものも、欲しい人は自分で引き出せる。
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.mrSidebar, .mrStructured, .mrFilter, .mrCompare, .mrFollow, .mrAIDiagnose,
+        [.mrSidebar, .mrStructured, .mrFilter, .mrCompare, .mrFollow,
          .mrClipboardHistory, .space, .flexibleSpace]
     }
 
@@ -89,8 +89,8 @@ final class MainToolbarDelegate: NSObject, NSToolbarDelegate {
                           action: #selector(MainWindowController.toolbarToggleFollow(_:)))
 
         case .mrAIDiagnose:
-            return button(id, label: L("ai.menu.errorCause"), symbol: "sparkles",
-                          action: #selector(MainWindowController.toolbarDiagnoseWithAI(_:)))
+            // Ignore AI items restored from an older saved toolbar layout.
+            return nil
 
         case .mrClipboardHistory:
             // NSMenuToolbarItem は使わない。実機で「クリックしても古い中身のまま」が

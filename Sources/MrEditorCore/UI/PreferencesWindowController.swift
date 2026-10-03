@@ -34,12 +34,6 @@ final class PreferencesWindowController: NSWindowController {
         colorsItem.image = NSImage(systemSymbolName: "paintpalette", accessibilityDescription: nil)
         tabs.addTabViewItem(colorsItem)
 
-        let ai = AIPaneViewController()
-        ai.title = L("prefs.ai.tab")
-        let aiItem = NSTabViewItem(viewController: ai)
-        aiItem.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: nil)
-        tabs.addTabViewItem(aiItem)
-
         let window = NSWindow(contentViewController: tabs)
         window.styleMask = [.titled, .closable]
         window.title = L("prefs.title")
@@ -86,13 +80,21 @@ private func pin(_ stack: NSStackView, in root: NSView) {
 
 // MARK: - 一般ペイン（保存中の表示）
 
-private final class GeneralPaneViewController: NSViewController {
+private final class GeneralPaneViewController: NSViewController, NSTextFieldDelegate {
     private var statusBarRadio: NSButton!
     private var sheetRadio: NSButton!
     private var autoReloadCheck: NSButton!
 
     override func loadView() {
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: 460, height: 340))
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 460, height: 440))
+        let previewTypes = NSTextField(string: AppSettings.defaultPreviewFileTypes)
+        previewTypes.delegate = self
+        previewTypes.setAccessibilityLabel(L("prefs.preview.types"))
+        previewTypes.widthAnchor.constraint(equalToConstant: 400).isActive = true
+        let previewHint = NSTextField(wrappingLabelWithString: L("prefs.preview.hint"))
+        previewHint.font = .systemFont(ofSize: 11)
+        previewHint.textColor = .secondaryLabelColor
+        previewHint.widthAnchor.constraint(lessThanOrEqualToConstant: 400).isActive = true
 
         statusBarRadio = NSButton(radioButtonWithTitle: L("menu.saveProgress.statusBar"),
                                   target: self, action: #selector(radioChanged(_:)))
@@ -113,7 +115,8 @@ private final class GeneralPaneViewController: NSViewController {
 
         let rows: [NSView] = [heading("prefs.saveProgress"), statusBarRadio, sheetRadio, hint,
                               sep,
-                              heading("prefs.externalChanges"), autoReloadCheck, reloadHint]
+                              heading("prefs.externalChanges"), autoReloadCheck, reloadHint,
+                              heading("prefs.preview.types"), previewTypes, previewHint]
         let stack = makeStack(rows)
         hint.widthAnchor.constraint(lessThanOrEqualToConstant: 400).isActive = true
         reloadHint.widthAnchor.constraint(lessThanOrEqualToConstant: 400).isActive = true
@@ -126,6 +129,10 @@ private final class GeneralPaneViewController: NSViewController {
 
     @objc private func autoReloadChanged(_ sender: NSButton) {
         AppSettings.autoReloadExternalChanges = (sender.state == .on)
+    }
+    func controlTextDidChange(_ notification: Notification) {
+        guard let field = notification.object as? NSTextField else { return }
+        AppSettings.defaultPreviewFileTypes = field.stringValue
     }
 
     private func syncRadios() {
