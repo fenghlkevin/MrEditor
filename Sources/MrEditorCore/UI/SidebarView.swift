@@ -9,6 +9,7 @@ import AppKit
 final class SidebarView: NSView {
     var onSelect: ((Int) -> Void)?
     var onCompare: (([Int]) -> Void)?
+    var localFileURL: ((Int) -> URL?)?
     private(set) var selectedIndices = Set<Int>()
     private var selectionAnchor: Int?
     var onClose: ((Int) -> Void)?
@@ -124,6 +125,10 @@ final class SidebarView: NSView {
         }
     }
     @objc private func compareSelection() { onCompare?(selectedIndices.sorted()) }
+    @objc private func openInFinder(_ sender: NSMenuItem) {
+        guard let url = localFileURL?(sender.tag), url.isFileURL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
     private func documentMenu(for index: Int) -> NSMenu {
         // A context click on either selected row preserves the pair.
         if !selectedIndices.contains(index) { selectDocument(index, modifiers: []) }
@@ -133,6 +138,11 @@ final class SidebarView: NSView {
         compare.target = self
         compare.isEnabled = selectedIndices.count == 2
         menu.addItem(compare)
+        let reveal = NSMenuItem(title: L("sidebar.openInFinder"), action: #selector(openInFinder(_:)), keyEquivalent: "")
+        reveal.target = self
+        reveal.tag = index
+        reveal.isEnabled = localFileURL?(index)?.isFileURL == true
+        menu.addItem(reveal)
         return menu
     }
     private func selectDocument(_ index: Int, modifiers: NSEvent.ModifierFlags) {

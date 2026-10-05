@@ -680,3 +680,5 @@
 "menu.userGuide" = "TextStack User Guide (Chinese)";
 "menu.previewOnly" = "Preview Only / Show Source";
 "menu.lineWrap" = "Wrap Lines";
+
+"sidebar.openInFinder" = "Reveal in Finder";

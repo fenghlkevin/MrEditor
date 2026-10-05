@@ -670,3 +670,5 @@
 "menu.userGuide" = "TextStack 功能使用说明";
 "menu.previewOnly" = "仅预览 / 显示源码";
 "menu.lineWrap" = "自动换行";
+
+"sidebar.openInFinder" = "在 Finder 中打开";

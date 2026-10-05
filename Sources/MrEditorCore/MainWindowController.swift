@@ -154,6 +154,10 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         // サイドバー（開いているドキュメント一覧）
         sidebar.translatesAutoresizingMaskIntoConstraints = false
+        sidebar.localFileURL = { [weak self] index in
+            guard let self, self.viewers.indices.contains(index) else { return nil }
+            return self.viewers[index].fileURL
+        }
         sidebar.onCompare = { [weak self] indices in self?.compareDocuments(at: indices) }
         sidebar.onSelect = { [weak self] i in self?.activate(i) }
         sidebar.onClose = { [weak self] i in self?.closeDocument(at: i) }

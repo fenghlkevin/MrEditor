@@ -680,3 +680,5 @@
 "menu.userGuide" = "TextStack 使用ガイド（中国語）";
 "menu.previewOnly" = "プレビューのみ / ソース表示";
 "menu.lineWrap" = "行の折り返し";
+
+"sidebar.openInFinder" = "Finder で表示";
